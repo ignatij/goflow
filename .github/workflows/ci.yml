@@ -57,6 +57,5 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5433
         run: |
-          make init_db
           # go run cmd/goflow-migrate/main.go migrate --db "postgres://testuser:testpass@localhost:5433/goflow_test?sslmode=disable"
           make test
