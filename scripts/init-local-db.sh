@@ -11,8 +11,7 @@ ACTION=${1:-"help"}
 if [ -f .env ]; then
     export $(cat .env | sed 's/#.*//g' | xargs)
 else
-    echo "Error: .env file not found in project root. Please create one with DB_USERNAME, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT."
-    exit 1
+    echo "Warning: .env file not found in project root. Relying on env vars for the following variables: DB_USERNAME, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT."
 fi
 
 # Validate required environment variables

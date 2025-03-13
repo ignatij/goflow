@@ -28,12 +28,6 @@ type TestDB struct {
 func SetupTestDB(t *testing.T) *TestDB {
 	ctx := context.Background()
 
-	dir, err := os.Getwd()
-	if err != nil {
-		panic("Error getting current working directory")
-	}
-	fmt.Println("Current working directory:", dir)
-
 	// Load .env file
 	if err := godotenv.Load(); err != nil {
 		t.Logf("No .env file found or failed to load: %v. Proceeding with environment variables.", err)
