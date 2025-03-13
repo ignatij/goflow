@@ -1,0 +1,1 @@
+CREATE INDEX idx_workflows_status ON workflows(status);

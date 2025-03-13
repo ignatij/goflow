@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS dependencies;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS workflows;

@@ -1,0 +1,62 @@
+name: GoFlow CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: goflow_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U testuser -d goflow_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24' 
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          #go install golang.org/x/lint/golangci-lint@v1.61.0
+          #go install github.com/joho/godotenv/cmd/godotenv@latest  # For test target
+
+      - name: Format code
+        run: make fmt
+
+      - name: Vet code
+        run: make vet
+
+      - name: Lint code
+        run: make lint
+
+      - name: Run tests
+        env:
+          DB_USERNAME: testuser
+          DB_PASSWORD: testpass
+          DB_NAME: goflow_test
+          DB_HOST: localhost
+          DB_PORT: 5433
+        run: |
+          make init_db
+          # go run cmd/goflow-migrate/main.go migrate --db "postgres://testuser:testpass@localhost:5433/goflow_test?sslmode=disable"
+          make test

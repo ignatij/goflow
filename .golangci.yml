@@ -1,0 +1,37 @@
+# .golangci.yml
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - gofmt
+    - govet
+    - staticcheck
+    - errcheck
+    - unused
+    - ineffassign
+    - typecheck
+    - misspell
+    - unparam
+    - revive
+
+linters-settings:
+  staticcheck:
+    checks: ["all"]
+  errcheck:
+    check-type-assertions: true
+  revive:
+    rules:
+      - name: var-naming
+        severity: warning
+      - name: package-comments
+        severity: warning
+
+issues:
+  exclude-dirs:
+    vendor
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck  # Allow unchecked errors in tests
+        - unparam   # Ignore unused params in tests
