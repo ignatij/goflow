@@ -7,23 +7,23 @@ deps: ## 🍚 Install dependencies
 
 .PHONY: start_db
 start_db: ## 🔩 Start local database container
-	sh scripts/start-db.sh start
+	bash scripts/start-db.sh start
 
 .PHONY: init_db
 init_db: ## 🔩 Start and migrate local database
-	sh scripts/init-local-db.sh start
+	bash scripts/init-local-db.sh start
 
 .PHONY: stop_db
 stop_db: ## 🔩 Stop local database
-	sh scripts/init-local-db.sh stop
+	bash scripts/init-local-db.sh stop
 
 .PHONY: cleanup_db
 cleanup_db: ## 🔩 Cleanup local database
-	sh scripts/init-local-db.sh cleanup    
+	bash scripts/init-local-db.sh cleanup    
 
 .PHONY: restart_db
 restart_db: ## 🔩 Restart local database
-	sh scripts/init-local-db.sh restart    
+	bash scripts/init-local-db.sh restart    
 
 .PHONY: fmt
 fmt: ## 🎨 Format code
@@ -37,6 +37,11 @@ lint: ## 🧹 Lint code
 vet: ## 👨‍⚕️ Vet code
 	go vet ./...
 
+.PHONY: test
+test: ## 🧪 Run all tests
+	go tool godotenv -f .env go test -race -count=1 -shuffle=on -coverprofile=coverage.out ./...
+	
+
 
 # not adapted yed
 .PHONY: start
@@ -47,10 +52,6 @@ start: ## 🏁 Start app
 openapi_http: ## 🎨 Openapi
 	@./scripts/openapi-http.sh internal/http http
 
-.PHONY: test
-test: ## 🧪 Run all tests
-	go tool godotenv -f .env go test -race -count=1 -shuffle=on -coverprofile=coverage.out ./...
-	
 .PHONY: integration_tests
 integration_tests: ## 🧪 Run integration tests
 	sh scripts/integration-tests.sh
