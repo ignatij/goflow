@@ -58,4 +58,4 @@ jobs:
           DB_PORT: 5433
         run: |
           # go run cmd/goflow-migrate/main.go migrate --db "postgres://testuser:testpass@localhost:5433/goflow_test?sslmode=disable"
-          make test
+          go test -race -count=1 -shuffle=on ./...
