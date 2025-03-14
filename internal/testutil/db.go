@@ -33,16 +33,17 @@ func SetupTestDB(t *testing.T) *TestDB {
 		t.Logf("No .env file found or failed to load: %v. Proceeding with environment variables.", err)
 	}
 
+	required := []string{"DB_USERNAME", "DB_PASSWORD", "DB_NAME"}
+	for _, key := range required {
+		if os.Getenv(key) == "" {
+			t.Fatalf("Error: required env var %s not set", key)
+		}
+	}
+
 	// Get environment variables
 	dbUsername := os.Getenv("DB_USERNAME")
 	dbPassword := os.Getenv("DB_PASSWORD")
 	dbName := os.Getenv("DB_NAME")
-	dbHost := os.Getenv("DB_HOST")
-
-	// Validate required variables
-	if dbUsername == "" || dbPassword == "" || dbName == "" || dbHost == "" {
-		t.Fatalf("Missing required environment variables: DB_USERNAME, DB_PASSWORD, DB_NAME, DB_HOST")
-	}
 
 	// Define the container request
 	req := testcontainers.ContainerRequest{
@@ -65,6 +66,10 @@ func SetupTestDB(t *testing.T) *TestDB {
 		t.Fatalf("Failed to start PostgreSQL container: %v", err)
 	}
 
+	host, err := pgContainer.Host(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	port, err := pgContainer.MappedPort(ctx, "5432")
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +77,7 @@ func SetupTestDB(t *testing.T) *TestDB {
 
 	// Connection string
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		dbUsername, dbPassword, dbHost, port.Port(), dbName)
+		dbUsername, dbPassword, host, port.Port(), dbName)
 
 	// Connect to the test DB
 	db, err := sqlx.Open("postgres", connStr)
