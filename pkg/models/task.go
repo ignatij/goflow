@@ -5,7 +5,7 @@ import "time"
 // Task represents a single executable unit within a workflow.
 type Task struct {
 	ID         string       `json:"id" db:"id"`                             // Unique identifier (e.g., "t1" or UUID)
-	WorkflowID int          `json:"workflow_id" db:"workflow_id"`           // Foreign key to Workflow
+	WorkflowID int64        `json:"workflow_id" db:"workflow_id"`           // Foreign key to Workflow
 	Name       string       `json:"name" db:"name"`                         // Descriptive name (e.g., "FetchData")
 	Status     string       `json:"status" db:"status"`                     // "pending", "running", "completed", "failed"
 	Retries    int          `json:"retries" db:"retries"`                   // Max retry attempts

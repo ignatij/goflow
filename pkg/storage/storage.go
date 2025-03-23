@@ -1,20 +1,22 @@
 package storage
 
-import "github.com/ignatij/goflow/pkg/models"
+import (
+	"github.com/ignatij/goflow/pkg/models"
+)
 
 // Store defines the storage operations for GoFlow.
 type Store interface {
-	// Workflow operations
-	SaveWorkflow(w models.Workflow) (int, error)
-	GetWorkflow(id int) (models.Workflow, error)
-	UpdateWorkflowStatus(id int, status string) error
+	SaveWorkflow(w models.Workflow) (int64, error)
+	GetWorkflow(id int64) (models.Workflow, error)
+	UpdateWorkflowStatus(id int64, status string) error
+	ListWorkflows() ([]models.Workflow, error)
 
-	// Task operations
 	SaveTask(t models.Task) error
-	GetTask(id string, workflowID int) (models.Task, error)
-	UpdateTaskStatus(id string, workflowID int, status, errorMsg string) error
+	GetTask(id string, workflowID int64) (models.Task, error)
+	UpdateTaskStatus(id string, workflowID int64, status, errorMsg string) error
 
-	// Dependency operations
 	SaveDependency(d models.Dependency) error
-	GetDependencies(workflowID int) ([]models.Dependency, error)
+	GetDependencies(workflowID int64) ([]models.Dependency, error)
+
+	Close() error
 }

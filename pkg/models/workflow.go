@@ -4,7 +4,7 @@ import "time"
 
 // Workflow represents a collection of tasks and their dependencies.
 type Workflow struct {
-	ID           int                 `json:"id" db:"id"`                 // Unique identifier (PostgreSQL auto-increment)
+	ID           int64               `json:"id" db:"id"`                 // Unique identifier (PostgreSQL auto-increment)
 	Name         string              `json:"name" db:"name"`             // Descriptive name (e.g., "DataPipeline")
 	Status       string              `json:"status" db:"status"`         // "pending", "running", "completed", "failed"
 	CreatedAt    time.Time           `json:"created_at" db:"created_at"` // Creation timestamp
