@@ -6,16 +6,27 @@ import (
 
 	"github.com/ignatij/goflow/internal/testutil"
 	"github.com/ignatij/goflow/pkg/models"
+	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/assert"
 )
+
+type txWrapper struct {
+	*sqlx.Tx
+}
+
+func (w *txWrapper) Close() error {
+	return w.Rollback()
+}
 
 func TestPostgresStore(t *testing.T) {
 	testDB := testutil.SetupTestDB(t)
 	defer testDB.Teardown(t)
-	store := &PostgresStore{db: testDB.DB}
-
 	// Test SaveWorkflow
 	t.Run("SaveWorkflow", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
 		wf := models.Workflow{
 			Name:      "TestWorkflow",
 			Status:    "pending",
@@ -24,7 +35,7 @@ func TestPostgresStore(t *testing.T) {
 		}
 		wfID, err := store.SaveWorkflow(wf)
 		assert.NoError(t, err)
-		assert.Greater(t, wfID, 0)
+		assert.Greater(t, wfID, int64(0))
 
 		savedWf, err := store.GetWorkflow(wfID)
 		assert.NoError(t, err)
@@ -36,6 +47,10 @@ func TestPostgresStore(t *testing.T) {
 
 	// Test GetWorkflow
 	t.Run("GetWorkflow", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
 		wf := models.Workflow{
 			Name:      "GetTestWorkflow",
 			Status:    "pending",
@@ -66,6 +81,10 @@ func TestPostgresStore(t *testing.T) {
 
 	// Test UpdateWorkflowStatus
 	t.Run("UpdateWorkflowStatus", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
 		wf := models.Workflow{
 			Name:      "UpdateStatusTest",
 			Status:    "pending",
@@ -83,8 +102,75 @@ func TestPostgresStore(t *testing.T) {
 		assert.Equal(t, "running", updated.Status)
 	})
 
+	// Test ListWorkflows (Empty)
+	t.Run("ListWorkflows returns empty list when no workflows exist", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
+		workflows, err := store.ListWorkflows()
+		assert.NoError(t, err)
+		assert.Empty(t, workflows)
+	})
+
+	// Test ListWorkflows (Populated)
+	t.Run("ListWorkflows returns workflows in descending order", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
+		// Insert test data
+		wf1 := models.Workflow{
+			Name:      "Workflow 1",
+			Status:    "pending",
+			CreatedAt: time.Now().Add(-2 * time.Hour),
+			UpdatedAt: time.Now().Add(-2 * time.Hour),
+		}
+		wf2 := models.Workflow{
+			Name:      "Workflow 2",
+			Status:    "running",
+			CreatedAt: time.Now().Add(-1 * time.Hour),
+			UpdatedAt: time.Now().Add(-1 * time.Hour),
+		}
+		wf3 := models.Workflow{
+			Name:      "Workflow 3",
+			Status:    "completed",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+
+		id1, err := store.SaveWorkflow(wf1)
+		assert.NoError(t, err)
+		assert.NotZero(t, id1)
+		id2, err := store.SaveWorkflow(wf2)
+		assert.NoError(t, err)
+		assert.NotZero(t, id2)
+		id3, err := store.SaveWorkflow(wf3)
+		assert.NoError(t, err)
+		assert.NotZero(t, id3)
+
+		workflows, err := store.ListWorkflows()
+		assert.NoError(t, err)
+		assert.Len(t, workflows, 3)
+
+		// Check order (descending by created_at)
+		assert.Equal(t, id3, workflows[0].ID)
+		assert.Equal(t, "Workflow 3", workflows[0].Name)
+		assert.Equal(t, "completed", workflows[0].Status)
+		assert.Equal(t, id2, workflows[1].ID)
+		assert.Equal(t, "Workflow 2", workflows[1].Name)
+		assert.Equal(t, "running", workflows[1].Status)
+		assert.Equal(t, id1, workflows[2].ID)
+		assert.Equal(t, "Workflow 1", workflows[2].Name)
+		assert.Equal(t, "pending", workflows[2].Status)
+	})
+
 	// Test SaveTask
 	t.Run("SaveTask", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
 		wfID, err := store.SaveWorkflow(models.Workflow{
 			Name:      "TaskTestWorkflow",
 			Status:    "pending",
@@ -111,6 +197,10 @@ func TestPostgresStore(t *testing.T) {
 
 	// Test GetTask
 	t.Run("GetTask", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
 		wfID, err := store.SaveWorkflow(models.Workflow{
 			Name:      "GetTaskTest",
 			Status:    "pending",
@@ -130,6 +220,10 @@ func TestPostgresStore(t *testing.T) {
 
 	// Test UpdateTaskStatus
 	t.Run("UpdateTaskStatus", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
 		wfID, err := store.SaveWorkflow(models.Workflow{
 			Name:      "UpdateTaskTest",
 			Status:    "pending",
@@ -154,6 +248,10 @@ func TestPostgresStore(t *testing.T) {
 
 	// Test SaveDependency
 	t.Run("SaveDependency", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
 		wfID, err := store.SaveWorkflow(models.Workflow{
 			Name:      "DepTestWorkflow",
 			Status:    "pending",
@@ -183,6 +281,10 @@ func TestPostgresStore(t *testing.T) {
 
 	// Test GetDependencies
 	t.Run("GetDependencies", func(t *testing.T) {
+		tx, err := testDB.DB.Beginx()
+		assert.NoError(t, err)
+		store := &PostgresStore{db: &txWrapper{tx}}
+		t.Cleanup(func() { store.Close() })
 		wfID, err := store.SaveWorkflow(models.Workflow{
 			Name:      "GetDepsTest",
 			Status:    "pending",

@@ -41,7 +41,9 @@ vet: ## 👨‍⚕️ Vet code
 test: ## 🧪 Run all tests
 	go tool godotenv -f .env go test -race -count=1 -shuffle=on -coverprofile=coverage.out ./...
 	
-
+.PHONY: build_docker
+build_docker: ## 👷 Build docker image
+	docker build -t goflow:latest .
 
 # not adapted yed
 .PHONY: start
@@ -63,10 +65,6 @@ unit_tests: ## 🧪 Run unit tests
 .PHONY: e2e_tests
 e2e_tests: ## 🧪 Run e2e tests
 	sh scripts/e2e-tests.sh
-
-.PHONY: build-docker
-build_docker: ## 👷 Build docker image
-	sh scripts/build-docker.sh
 
 .PHONY: help
 help: ## 🤔 Show help messages for make targets

@@ -21,7 +21,8 @@ import (
 // TestDB holds the test database connection and container
 type TestDB struct {
 	DB        *sqlx.DB
-	container testcontainers.Container
+	Container testcontainers.Container
+	ConnStr   string
 }
 
 // SetupTestDB initializes a PostgreSQL container and returns a connected DB
@@ -123,7 +124,8 @@ func SetupTestDB(t *testing.T) *TestDB {
 
 	return &TestDB{
 		DB:        db,
-		container: pgContainer,
+		Container: pgContainer,
+		ConnStr:   connStr,
 	}
 }
 
@@ -132,7 +134,7 @@ func (td *TestDB) Teardown(t *testing.T) {
 	if err := td.DB.Close(); err != nil {
 		t.Errorf("Failed to close DB connection: %v", err)
 	}
-	if err := td.container.Terminate(context.Background()); err != nil {
+	if err := td.Container.Terminate(context.Background()); err != nil {
 		t.Fatalf("Failed to terminate container: %v", err)
 	}
 }
