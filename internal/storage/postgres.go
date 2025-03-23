@@ -2,8 +2,10 @@ package storage
 
 import (
 	"database/sql"
+	"fmt"
 
 	"github.com/ignatij/goflow/pkg/models"
+	"github.com/ignatij/goflow/pkg/storage"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 )
@@ -13,7 +15,6 @@ type DBInterface interface {
 	Select(dest interface{}, query string, args ...interface{}) error
 	QueryRowx(query string, args ...interface{}) *sqlx.Row
 	Exec(query string, args ...interface{}) (sql.Result, error)
-	Close() error
 }
 type PostgresStore struct {
 	db DBInterface
@@ -32,6 +33,42 @@ func NewPostgresStore(connStr string) (*PostgresStore, error) {
 
 func NewPostgresStoreWithTx(tx DBInterface) *PostgresStore {
 	return &PostgresStore{db: tx}
+}
+
+func (s *PostgresStore) Begin() (storage.Store, error) {
+	if db, ok := s.db.(*sqlx.DB); ok {
+		tx, err := db.Beginx()
+		if err != nil {
+			return nil, err
+		}
+		return NewPostgresStoreWithTx(tx), nil
+	}
+	// If already a transaction, return self
+	if _, ok := s.db.(*sqlx.Tx); ok {
+		return s, nil
+	}
+	return nil, fmt.Errorf("cannot begin transaction on unknown type")
+}
+
+func (s *PostgresStore) Commit() error {
+	if tx, ok := s.db.(*sqlx.Tx); ok {
+		return tx.Commit()
+	}
+	return fmt.Errorf("cannot commit: not a transaction")
+}
+
+func (s *PostgresStore) Rollback() error {
+	if tx, ok := s.db.(*sqlx.Tx); ok {
+		return tx.Rollback()
+	}
+	return fmt.Errorf("cannot rollback: not a transaction")
+}
+
+func (s *PostgresStore) Close() error {
+	if db, ok := s.db.(*sqlx.DB); ok {
+		return db.Close()
+	}
+	return nil // No-op for *sqlx.Tx
 }
 
 // SaveWorkflow creates a new workflow and returns its ID (no tasks/deps)
@@ -142,9 +179,4 @@ func (s *PostgresStore) GetDependencies(workflowID int64) ([]models.Dependency, 
 		return nil, err
 	}
 	return deps, nil
-}
-
-// Closes DB connection
-func (s *PostgresStore) Close() error {
-	return s.db.Close()
 }

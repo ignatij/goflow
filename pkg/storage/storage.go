@@ -18,5 +18,8 @@ type Store interface {
 	SaveDependency(d models.Dependency) error
 	GetDependencies(workflowID int64) ([]models.Dependency, error)
 
+	Begin() (Store, error)
+	Commit() error
+	Rollback() error
 	Close() error
 }
