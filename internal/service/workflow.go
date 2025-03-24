@@ -6,6 +6,7 @@ import (
 	"github.com/ignatij/goflow/internal/log"
 	"github.com/ignatij/goflow/pkg/models"
 	"github.com/ignatij/goflow/pkg/storage"
+	"github.com/pkg/errors"
 )
 
 type WorkflowService struct {
@@ -17,6 +18,12 @@ func NewWorkflowService(store storage.Store) *WorkflowService {
 }
 
 func (s *WorkflowService) CreateWorkflow(name string) (id int64, err error) {
+	if name == "" {
+		return 0, errors.New("workflow name cannot be empty")
+	}
+	if len(name) > 100 {
+		return 0, errors.New("workflow name too long (max 100 characters)")
+	}
 	txStore, err := s.store.Begin()
 	if err != nil {
 		return 0, err

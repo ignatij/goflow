@@ -31,21 +31,13 @@ func NewPostgresStore(connStr string) (*PostgresStore, error) {
 	return &PostgresStore{db: db}, nil
 }
 
-func NewPostgresStoreWithTx(tx DBInterface) *PostgresStore {
-	return &PostgresStore{db: tx}
-}
-
 func (s *PostgresStore) Begin() (storage.Store, error) {
 	if db, ok := s.db.(*sqlx.DB); ok {
 		tx, err := db.Beginx()
 		if err != nil {
 			return nil, err
 		}
-		return NewPostgresStoreWithTx(tx), nil
-	}
-	// If already a transaction, return self
-	if _, ok := s.db.(*sqlx.Tx); ok {
-		return s, nil
+		return &PostgresStore{db: tx}, nil
 	}
 	return nil, fmt.Errorf("cannot begin transaction on unknown type")
 }
@@ -77,7 +69,7 @@ func (s *PostgresStore) SaveWorkflow(w models.Workflow) (int64, error) {
 	err := s.db.QueryRowx("INSERT INTO workflows (name, status, created_at, updated_at) VALUES ($1, $2, $3, $4) RETURNING id",
 		w.Name, w.Status, w.CreatedAt, w.UpdatedAt).Scan(&wfID)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("save workflow: %w", err)
 	}
 	return wfID, nil
 }
@@ -87,7 +79,7 @@ func (s *PostgresStore) GetWorkflow(id int64) (models.Workflow, error) {
 	var wf models.Workflow
 	err := s.db.Get(&wf, "SELECT * FROM workflows WHERE id = $1", id)
 	if err == sql.ErrNoRows {
-		return models.Workflow{}, sql.ErrNoRows
+		return models.Workflow{}, storage.ErrNotFound
 	}
 	if err != nil {
 		return models.Workflow{}, err
@@ -96,7 +88,7 @@ func (s *PostgresStore) GetWorkflow(id int64) (models.Workflow, error) {
 	// Fetch tasks
 	err = s.db.Select(&wf.Tasks, "SELECT * FROM tasks WHERE workflow_id = $1 ORDER BY id", id)
 	if err != nil {
-		return models.Workflow{}, err
+		return models.Workflow{}, fmt.Errorf("get workflow %d: %w", id, err)
 	}
 
 	// Fetch dependencies
@@ -114,7 +106,7 @@ func (s *PostgresStore) GetWorkflow(id int64) (models.Workflow, error) {
 }
 
 func (s *PostgresStore) ListWorkflows() ([]models.Workflow, error) {
-	var workflows []models.Workflow
+	workflows := []models.Workflow{}
 	query := "SELECT id, name, status, created_at, updated_at FROM workflows ORDER BY created_at DESC"
 	err := s.db.Select(&workflows, query)
 	if err != nil {
@@ -141,7 +133,7 @@ func (s *PostgresStore) GetTask(id string, workflowID int64) (models.Task, error
 	var task models.Task
 	err := s.db.Get(&task, "SELECT * FROM tasks WHERE id = $1 AND workflow_id = $2", id, workflowID)
 	if err == sql.ErrNoRows {
-		return models.Task{}, sql.ErrNoRows
+		return models.Task{}, storage.ErrNotFound
 	}
 	if err != nil {
 		return models.Task{}, err

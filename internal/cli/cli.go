@@ -1,19 +1,15 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/ignatij/goflow/internal/log"
+	"github.com/ignatij/goflow/internal/service"
 	internal_storage "github.com/ignatij/goflow/internal/storage"
-	"github.com/ignatij/goflow/pkg/models"
-	"github.com/ignatij/goflow/pkg/storage"
 	"github.com/spf13/cobra"
 )
-
-type CLI struct {
-	store storage.Store
-}
 
 func SetupCLI(rootCmd *cobra.Command) {
 	createCmd := &cobra.Command{
@@ -29,9 +25,8 @@ func SetupCLI(rootCmd *cobra.Command) {
 			log.GetLogger().Debugf("Running create with db: %s", dbConnStr)
 			store := initStore(dbConnStr)
 			defer store.Close()
-			cli := &CLI{}
-			cli.store = store
-			cli.createWorkflow(args)
+			svc := service.NewWorkflowService(store)
+			createWorkflow(svc, args)
 		},
 	}
 
@@ -46,44 +41,40 @@ func SetupCLI(rootCmd *cobra.Command) {
 			}
 			log.GetLogger().Debugf("Running list with db: %s", dbConnStr)
 			store := initStore(dbConnStr)
-			cli := &CLI{}
 			defer store.Close()
-			cli.store = store
-			cli.listWorkflows()
+			svc := service.NewWorkflowService(store)
+			listWorkflows(svc)
 		},
 	}
 
 	rootCmd.AddCommand(createCmd, listCmd)
 }
 
-func (c *CLI) createWorkflow(args []string) {
-	wf := models.Workflow{
-		Name:      args[0],
-		Status:    "pending",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	id, err := c.store.SaveWorkflow(wf)
+func createWorkflow(svc *service.WorkflowService, args []string) {
+	id, err := svc.CreateWorkflow(args[0])
 	if err != nil {
 		log.GetLogger().Errorf("Failed to create workflow: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: failed to create workflow: %v\n", err)
 		os.Exit(1)
 	}
-	log.GetLogger().Infof("Created workflow '%s' with ID %d", wf.Name, id)
+	fmt.Fprintf(os.Stdout, "Created workflow '%s' with ID %d\n", args[0], id)
 }
 
-func (c *CLI) listWorkflows() {
-	workflows, err := c.store.ListWorkflows()
+func listWorkflows(svc *service.WorkflowService) {
+	workflows, err := svc.ListWorkflows()
 	if err != nil {
 		log.GetLogger().Errorf("Failed to list workflows: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: failed to list workflows: %v\n", err)
 		os.Exit(1)
 	}
 	if len(workflows) == 0 {
-		log.GetLogger().Info("No workflows found.")
+		fmt.Fprintf(os.Stdout, "No workflows found.\n")
 		return
 	}
-	log.GetLogger().Info("Workflows:")
+	fmt.Fprintf(os.Stdout, "Workflows:\n")
 	for _, wf := range workflows {
-		log.GetLogger().Infof("- ID: %d, Name: %s, Status: %s, Created: %s", wf.ID, wf.Name, wf.Status, wf.CreatedAt.Format(time.RFC3339))
+		fmt.Fprintf(os.Stdout, "- ID: %d, Name: %s, Status: %s, Created: %s\n",
+			wf.ID, wf.Name, wf.Status, wf.CreatedAt.Format(time.RFC3339))
 	}
 }
 

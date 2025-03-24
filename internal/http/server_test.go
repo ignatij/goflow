@@ -69,7 +69,7 @@ func TestE2EServer(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
-		assert.Contains(t, string(body), "Created workflow 'test-workflow' with ID")
+		assert.Equal(t, "{\"id\":1,\"message\":\"Created workflow 'test-workflow' with ID 1\"}\n", string(body))
 	})
 
 	t.Run("ListWorkflows", func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestE2EServer(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
-		assert.Contains(t, string(body), "- ID: 1, Name: test-workflow, Status: pending")
+		assert.Contains(t, string(body), "{\"id\":1,\"name\":\"test-workflow\",\"status\":\"pending\"")
 	})
 
 	t.Run("CreateWorkflowMissingName", func(t *testing.T) {
@@ -101,7 +101,7 @@ func TestE2EServer(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
-		assert.Equal(t, "Missing 'name' parameter\n", string(body))
+		assert.Equal(t, "{\"error\":\"Missing 'name' parameter\"}\n", string(body))
 	})
 
 	t.Run("ListEmptyWorkflows", func(t *testing.T) {
@@ -115,6 +115,6 @@ func TestE2EServer(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
-		assert.Equal(t, "No workflows found.\n", string(body))
+		assert.Equal(t, "[]\n", string(body))
 	})
 }

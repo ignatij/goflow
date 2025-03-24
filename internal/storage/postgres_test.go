@@ -6,6 +6,7 @@ import (
 
 	"github.com/ignatij/goflow/internal/testutil"
 	"github.com/ignatij/goflow/pkg/models"
+	"github.com/ignatij/goflow/pkg/storage"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -72,6 +73,13 @@ func TestPostgresStore(t *testing.T) {
 		assert.Len(t, retrieved.Tasks, 2)
 		assert.Equal(t, "t1", retrieved.Tasks[1].ID)
 		assert.Equal(t, []string{"t0"}, retrieved.Dependencies["t1"])
+	})
+
+	// GetNonExistingWorkflow
+	t.Run("GetNonExistingWorkflow", func(t *testing.T) {
+		store := newTxStore(t)
+		_, err := store.GetWorkflow(123)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
 	// Test UpdateWorkflowStatus
@@ -187,6 +195,21 @@ func TestPostgresStore(t *testing.T) {
 		retrieved, err := store.GetTask("t1", wfID)
 		assert.NoError(t, err)
 		assert.Equal(t, "Task1", retrieved.Name)
+	})
+
+	// Test GetNonExistingTask
+	t.Run("GetNonExistingTask", func(t *testing.T) {
+		store := newTxStore(t)
+		wfID, err := store.SaveWorkflow(models.Workflow{
+			Name:      "GetTaskTest",
+			Status:    "pending",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+		assert.NoError(t, err)
+
+		_, err = store.GetTask("t1", wfID)
+		assert.ErrorIs(t, err, storage.ErrNotFound)
 	})
 
 	// Test UpdateTaskStatus
