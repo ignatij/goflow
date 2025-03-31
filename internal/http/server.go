@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -88,18 +89,27 @@ func workflowsHandler(svc *service.WorkflowService) http.HandlerFunc {
 }
 
 func createWorkflowHTTP(w http.ResponseWriter, r *http.Request, svc *service.WorkflowService) {
-	name := r.FormValue("name")
-	if name == "" {
-		log.GetLogger().Warn("Missing 'name' parameter in POST /workflows")
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Missing 'name' parameter"}); err != nil {
-			log.GetLogger().Errorf("Failed to encode error response: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-		}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.GetLogger().Errorf("Failed to read body: %v", err)
+		http.Error(w, `{"error":"Invalid request"}`, http.StatusBadRequest)
 		return
 	}
-	id, err := svc.CreateWorkflow(name)
+	// Parse JSON
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &input); err != nil {
+		log.GetLogger().Errorf("Failed to parse JSON: %v", err)
+		http.Error(w, `{"error":"Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	if input.Name == "" {
+		http.Error(w, `{"error":"Missing 'name' parameter"}`, http.StatusBadRequest)
+		return
+	}
+	id, err := svc.CreateWorkflow(input.Name)
 	if err != nil {
 		log.GetLogger().Errorf("Failed to create workflow: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -112,7 +122,7 @@ func createWorkflowHTTP(w http.ResponseWriter, r *http.Request, svc *service.Wor
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": fmt.Sprintf("Created workflow '%s' with ID %d", name, id),
+		"message": fmt.Sprintf("Created workflow '%s' with ID %d", input.Name, id),
 		"id":      id,
 	}); err != nil {
 		log.GetLogger().Errorf("Failed to encode response: %v", err)

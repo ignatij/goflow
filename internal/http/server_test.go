@@ -1,10 +1,10 @@
 package http
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/ignatij/goflow/internal/service"
@@ -62,14 +62,22 @@ func TestE2EServer(t *testing.T) {
 		srv := newServer(store)
 		defer srv.Close()
 
-		data := url.Values{"name": {"test-workflow"}}
-		resp, err := srv.Client().PostForm(srv.URL+"/workflows", data)
+		// Prepare JSON payload
+		jsonData := []byte(`{"name": "test-workflow"}`)
+		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
+		assert.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		// Send request
+		resp, err := srv.Client().Do(req)
 		assert.NoError(t, err)
 		defer resp.Body.Close()
 
+		// Verify response
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		body, _ := io.ReadAll(resp.Body)
-		assert.Equal(t, "{\"id\":1,\"message\":\"Created workflow 'test-workflow' with ID 1\"}\n", string(body))
+		body, err := io.ReadAll(resp.Body)
+		assert.NoError(t, err)
+		assert.Equal(t, `{"id":1,"message":"Created workflow 'test-workflow' with ID 1"}`+"\n", string(body))
 	})
 
 	t.Run("ListWorkflows", func(t *testing.T) {
@@ -77,11 +85,18 @@ func TestE2EServer(t *testing.T) {
 		srv := newServer(store)
 		defer srv.Close()
 
-		data := url.Values{"name": {"test-workflow"}}
-		_, err := srv.Client().PostForm(srv.URL+"/workflows", data)
+		// Prepare JSON payload
+		jsonData := []byte(`{"name": "test-workflow"}`)
+		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
 		assert.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := srv.Client().Get(srv.URL + "/workflows")
+		// Send request
+		resp, err := srv.Client().Do(req)
+		assert.NoError(t, err)
+		defer resp.Body.Close()
+
+		resp, err = srv.Client().Get(srv.URL + "/workflows")
 		assert.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -95,7 +110,14 @@ func TestE2EServer(t *testing.T) {
 		srv := newServer(store)
 		defer srv.Close()
 
-		resp, err := srv.Client().Post(srv.URL+"/workflows", "application/x-www-form-urlencoded", nil)
+		// Prepare JSON payload
+		jsonData := []byte(`{"name": ""}`)
+		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
+		assert.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		// Send request
+		resp, err := srv.Client().Do(req)
 		assert.NoError(t, err)
 		defer resp.Body.Close()
 

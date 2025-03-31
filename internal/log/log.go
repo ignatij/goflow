@@ -1,6 +1,8 @@
 package log
 
 import (
+	"os"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -8,7 +10,18 @@ var logger *logrus.Logger
 
 func init() {
 	logger = logrus.New()
-	logger.SetLevel(logrus.InfoLevel) // Default level; adjustable
+	level := os.Getenv("LOG_LEVEL")
+	if level != "" {
+		if level == "DEBUG" {
+			logger.SetLevel(logrus.DebugLevel)
+		} else if level == "WARN" {
+			logger.SetLevel(logrus.WarnLevel)
+		} else if level == "INFO" {
+			logger.SetLevel(logrus.InfoLevel)
+		}
+	} else {
+		logger.SetLevel(logrus.InfoLevel) // Default level; adjustable
+	}
 	logger.SetFormatter(&logrus.TextFormatter{
 		FullTimestamp: true,
 	})
@@ -23,8 +36,4 @@ func init() {
 // GetLogger returns the shared logger instance
 func GetLogger() *logrus.Logger {
 	return logger
-}
-
-func Configure(level logrus.Level) {
-	logger.SetLevel(level)
 }
