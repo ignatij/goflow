@@ -1,3 +1,4 @@
 .env
 vendor
 coverage.out
+*/goflow/*
