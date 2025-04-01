@@ -40,16 +40,28 @@ vet: ## 👨‍⚕️ Vet code
 .PHONY: test
 test: ## 🧪 Run all tests
 	go tool godotenv -f .env go test -race -count=1 -shuffle=on -coverprofile=coverage.out ./...
-	
+
+.PHONY: build
+build: ## 👷 Build
+	cd cmd/goflow && go build -o goflow main.go && mv goflow ../../
+
 .PHONY: build_docker
 build_docker: ## 👷 Build docker image
 	docker build -t goflow:latest .
 
-# not adapted yed
+.PHONY: start_docker
+start_docker: ## 🏁 Start docker app
+	cd ci && docker-compose up goflow
+
 .PHONY: start
 start: ## 🏁 Start app
-	sh scripts/start-app.sh
+	go tool godotenv -f .env go run cmd/goflow/main.go
 
+.PHONY: start_binary
+start_binary: ## 🏁 Start app
+	go tool godotenv -f .env ./goflow
+
+# not adapted yed
 .PHONY: openapi_http
 openapi_http: ## 🎨 Openapi
 	@./scripts/openapi-http.sh internal/http http

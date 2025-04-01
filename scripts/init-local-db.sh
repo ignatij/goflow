@@ -31,7 +31,7 @@ COMPOSE_FILE="ci/docker-compose.yml"
 # Functions
 start_db() {
     echo "Starting PostgreSQL container..."
-    docker-compose -f "$COMPOSE_FILE" up -d
+    docker-compose -f "$COMPOSE_FILE" up -d postgres
     echo "Waiting for PostgreSQL to be ready..."
     until docker-compose -f "$COMPOSE_FILE" exec postgres pg_isready -U "${DB_USERNAME}" -d "${DB_NAME}" > /dev/null 2>&1; do
         sleep 1
@@ -46,12 +46,12 @@ migrate_db() {
 
 stop_db() {
     echo "Stopping PostgreSQL container..."
-    docker-compose -f "$COMPOSE_FILE" down
+    docker-compose -f "$COMPOSE_FILE" down postgres
 }
 
 cleanup_db() {
     echo "Cleaning up PostgreSQL container and volume..."
-    docker-compose -f "$COMPOSE_FILE" down -v --remove-orphans
+    docker-compose -f "$COMPOSE_FILE" down postgres -v --remove-orphans
 }
 
 # Handle actions

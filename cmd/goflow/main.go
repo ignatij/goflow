@@ -28,11 +28,12 @@ func main() {
 			}
 		},
 	}
-	rootCmd.PersistentFlags().StringVar(&dbConnStr, "db", "", "Database connection string (required)")
-	if err := rootCmd.MarkPersistentFlagRequired("db"); err != nil {
-		log.GetLogger().Errorf("Error setting required db flag: %v", err)
-		os.Exit(1)
-	}
+	rootCmd.PersistentFlags().StringVar(&dbConnStr, "db", fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		os.Getenv("DB_USERNAME"),
+		os.Getenv("DB_PASSWORD"),
+		os.Getenv("DB_HOST"),
+		os.Getenv("DB_PORT"),
+		os.Getenv("DB_NAME")), "Database connection string")
 	rootCmd.PersistentFlags().StringVar(&port, "port", "8080", "HTTP server port")
 
 	// Add CLI subcommands to rootCmd
