@@ -2,9 +2,12 @@ package http
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/ignatij/goflow/internal/service"
@@ -138,5 +141,58 @@ func TestE2EServer(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
 		assert.Equal(t, "[]\n", string(body))
+	})
+
+	t.Run("UpdateWorkflowStatus", func(t *testing.T) {
+		store := newTestStore(t)
+		srv := newServer(store)
+		defer srv.Close()
+
+		// Prepare JSON payload
+		jsonData := []byte(`{"name": "test-workflow"}`)
+		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
+		assert.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		// Send request
+		resp, err := srv.Client().Do(req)
+		assert.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+
+		var response struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			t.Fatalf("Failed to unmarshall response: %v", err)
+		}
+
+		assert.NoError(t, err)
+		defer resp.Body.Close()
+
+		id := strconv.FormatInt(response.ID, 10)
+		jsonData = []byte(fmt.Sprintf(`{"id": %d, "status": "COMPLETED"}`, response.ID))
+		req, err = http.NewRequest("PUT", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
+		assert.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err = srv.Client().Do(req)
+		assert.NoError(t, err)
+
+		assert.Equal(t, 200, resp.StatusCode)
+
+		body, err = io.ReadAll(resp.Body)
+		assert.NoError(t, err)
+		defer resp.Body.Close()
+
+		var responseUpdateWorkflowStatus struct {
+			ID      int64  `json:"id"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(body, &responseUpdateWorkflowStatus); err != nil {
+			t.Fatalf("Failed to unmarshall response: %v", err)
+		}
+
+		assert.Equal(t, response.ID, responseUpdateWorkflowStatus.ID)
+		assert.Equal(t, "Updated the status to 'COMPLETED' of the workflow with ID: "+id, responseUpdateWorkflowStatus.Message)
 	})
 }

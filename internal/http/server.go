@@ -77,6 +77,8 @@ func workflowsHandler(svc *service.WorkflowService) http.HandlerFunc {
 			listWorkflowsHTTP(w, r, svc)
 		case http.MethodPost:
 			createWorkflowHTTP(w, r, svc)
+		case http.MethodPut:
+			updateWorkflowStatusHTTP(w, r, svc)
 		default:
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -124,6 +126,53 @@ func createWorkflowHTTP(w http.ResponseWriter, r *http.Request, svc *service.Wor
 	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": fmt.Sprintf("Created workflow '%s' with ID %d", input.Name, id),
 		"id":      id,
+	}); err != nil {
+		log.GetLogger().Errorf("Failed to encode response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+}
+
+func updateWorkflowStatusHTTP(w http.ResponseWriter, r *http.Request, svc *service.WorkflowService) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.GetLogger().Errorf("Failed to read body: %v", err)
+		http.Error(w, `{"error":"Invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	// Parse JSON
+	var input struct {
+		ID     int64  `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(body, &input); err != nil {
+		log.GetLogger().Errorf("Failed to parse JSON: %v", err)
+		http.Error(w, `{"error":"Invalid JSON"}`, http.StatusBadRequest)
+		return
+	}
+
+	if input.ID == 0 {
+		http.Error(w, `{"error":"Missing 'id' parameter"}`, http.StatusBadRequest)
+		return
+	}
+	if input.Status == "" {
+		http.Error(w, `{"error":"Missing 'status' parameter"}`, http.StatusBadRequest)
+		return
+	}
+	err = svc.UpdateWorkflowStatus(input.ID, input.Status)
+	if err != nil {
+		log.GetLogger().Errorf("Failed to update workflow status: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Failed to update workflow status: %v", err)}); err != nil {
+			log.GetLogger().Errorf("Failed to encode error response: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": fmt.Sprintf("Updated the status to '%s' of the workflow with ID: %d", input.Status, input.ID),
+		"id":      input.ID,
 	}); err != nil {
 		log.GetLogger().Errorf("Failed to encode response: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

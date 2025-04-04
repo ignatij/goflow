@@ -16,7 +16,7 @@ type Store interface {
 	// GetWorkflow retrieves a workflow by ID, returning ErrNotFound if absent.
 	GetWorkflow(id int64) (models.Workflow, error)
 	// UpdateWorkflowStatus updates a workflow status by its ID.
-	UpdateWorkflowStatus(id int64, status string) error
+	UpdateWorkflowStatus(id int64, status models.WorkflowStatus) error
 	// ListWorkflows retrieves the list of all workflows.
 	ListWorkflows() ([]models.Workflow, error)
 

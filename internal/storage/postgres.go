@@ -116,7 +116,7 @@ func (s *PostgresStore) ListWorkflows() ([]models.Workflow, error) {
 }
 
 // UpdateWorkflowStatus updates the status of a workflow
-func (s *PostgresStore) UpdateWorkflowStatus(id int64, status string) error {
+func (s *PostgresStore) UpdateWorkflowStatus(id int64, status models.WorkflowStatus) error {
 	_, err := s.db.Exec("UPDATE workflows SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", status, id)
 	return err
 }

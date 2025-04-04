@@ -87,19 +87,19 @@ func TestPostgresStore(t *testing.T) {
 		store := newTxStore(t)
 		wf := models.Workflow{
 			Name:      "UpdateStatusTest",
-			Status:    "pending",
+			Status:    "PENDING",
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
 		wfID, err := store.SaveWorkflow(wf)
 		assert.NoError(t, err)
 
-		err = store.UpdateWorkflowStatus(wfID, "running")
+		err = store.UpdateWorkflowStatus(wfID, models.RunningWorkflowStatus)
 		assert.NoError(t, err)
 
 		updated, err := store.GetWorkflow(wfID)
 		assert.NoError(t, err)
-		assert.Equal(t, "running", updated.Status)
+		assert.Equal(t, models.RunningWorkflowStatus, updated.Status)
 	})
 
 	// Test ListWorkflows (Empty)

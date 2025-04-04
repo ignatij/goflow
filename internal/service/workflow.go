@@ -55,6 +55,54 @@ func (s *WorkflowService) CreateWorkflow(name string) (id int64, err error) {
 	return id, nil
 }
 
+// UpdateWorkflowStatus updates the status of an existing workflow by ID.
+func (s *WorkflowService) UpdateWorkflowStatus(id int64, status string) error {
+	// Validate inputs
+	if id <= 0 {
+		return errors.New("workflow ID must be positive")
+	}
+	wfStatus := models.WorkflowStatus(status)
+	switch wfStatus {
+	case models.PendingWorkflowStatus, models.RunningWorkflowStatus,
+		models.CompletedWorkflowStatus, models.FailedWorkflowStatus:
+		// Valid status, proceed
+	default:
+		return errors.New("invalid status; must be 'PENDING', 'RUNNING', 'COMPLETED', or 'FAILED'")
+	}
+
+	// Start transaction
+	txStore, err := s.store.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			if rollbackErr := txStore.Rollback(); rollbackErr != nil {
+				log.GetLogger().Errorf("Failed to rollback after error: %v (original error: %v)", rollbackErr, err)
+			}
+			return
+		}
+		if commitErr := txStore.Commit(); commitErr != nil {
+			log.GetLogger().Errorf("Failed to commit: %v", commitErr)
+			err = commitErr
+		}
+	}()
+
+	// Fetch existing workflow to ensure it exists
+	wf, err := txStore.GetWorkflow(id)
+	if err != nil {
+		return err
+	}
+
+	// Update status and timestamp
+	if err := txStore.UpdateWorkflowStatus(wf.ID, wfStatus); err != nil {
+		return err
+	}
+
+	log.GetLogger().Infof("Updated workflow ID %d to status '%s'", id, status)
+	return nil
+}
+
 func (s *WorkflowService) ListWorkflows() ([]models.Workflow, error) {
 	return s.store.ListWorkflows()
 }

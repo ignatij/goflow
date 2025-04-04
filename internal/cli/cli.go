@@ -47,7 +47,38 @@ func SetupCLI(rootCmd *cobra.Command) {
 		},
 	}
 
-	rootCmd.AddCommand(createCmd, listCmd)
+	updateWorkflowStatusCmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update a workflow's status",
+		Run: func(cmd *cobra.Command, args []string) {
+			dbConnStr, err := cmd.Flags().GetString("db")
+			if err != nil {
+				log.GetLogger().Errorf("Error retrieving db flag: %v", err)
+				os.Exit(1)
+			}
+			id, err := cmd.Flags().GetInt64("id")
+			if err != nil {
+				log.GetLogger().Errorf("Error retrieving id of the workflow: %v", err)
+				os.Exit(1)
+			}
+			status, err := cmd.Flags().GetString("status")
+			if err != nil {
+				log.GetLogger().Errorf("Error retrieving status: %v", err)
+				os.Exit(1)
+			}
+
+			if id == 0 || status == "" {
+				fmt.Println("Error: --id and --status are required")
+				os.Exit(1)
+			}
+			store := initStore(dbConnStr)
+			defer store.Close()
+			svc := service.NewWorkflowService(store)
+			updateWorkflowStatus(svc, id, status)
+		},
+	}
+
+	rootCmd.AddCommand(createCmd, listCmd, updateWorkflowStatusCmd)
 }
 
 func createWorkflow(svc *service.WorkflowService, args []string) {
@@ -58,6 +89,16 @@ func createWorkflow(svc *service.WorkflowService, args []string) {
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stdout, "Created workflow '%s' with ID %d\n", args[0], id)
+}
+
+func updateWorkflowStatus(svc *service.WorkflowService, id int64, status string) {
+	err := svc.UpdateWorkflowStatus(id, status)
+	if err != nil {
+		log.GetLogger().Errorf("Failed to update workflow status: %v", err)
+		fmt.Fprintf(os.Stderr, "Error: failed to update workflow status: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stdout, "Updated the status of the workflow with ID %d to '%s'\n", id, status)
 }
 
 func listWorkflows(svc *service.WorkflowService) {
