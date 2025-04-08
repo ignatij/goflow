@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/ignatij/goflow/internal/log"
-	"github.com/ignatij/goflow/internal/service"
 	internal_storage "github.com/ignatij/goflow/internal/storage"
+	"github.com/ignatij/goflow/pkg/service"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ func SetupCLI(rootCmd *cobra.Command) {
 			log.GetLogger().Debugf("Running create with db: %s", dbConnStr)
 			store := initStore(dbConnStr)
 			defer store.Close()
-			svc := service.NewWorkflowService(store)
+			svc := service.NewWorkflowService(store, log.GetLogger())
 			if len(args) != 1 {
 				log.GetLogger().Errorf("Wrong number of arguments, expected 1 got %v", len(args))
 				fmt.Printf("Wrong number of arguments, expected 1 got %v", len(args))
@@ -50,7 +50,7 @@ func SetupCLI(rootCmd *cobra.Command) {
 			log.GetLogger().Debugf("Running list with db: %s", dbConnStr)
 			store := initStore(dbConnStr)
 			defer store.Close()
-			svc := service.NewWorkflowService(store)
+			svc := service.NewWorkflowService(store, log.GetLogger())
 			listWorkflows(svc)
 		},
 	}
@@ -83,7 +83,7 @@ func SetupCLI(rootCmd *cobra.Command) {
 			}
 			store := initStore(dbConnStr)
 			defer store.Close()
-			svc := service.NewWorkflowService(store)
+			svc := service.NewWorkflowService(store, log.GetLogger())
 			updateWorkflowStatus(svc, int64(id), status)
 		},
 	}

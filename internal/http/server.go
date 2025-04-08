@@ -12,16 +12,16 @@ import (
 	"time"
 
 	"github.com/ignatij/goflow/internal/log"
-	"github.com/ignatij/goflow/internal/service"
+	"github.com/ignatij/goflow/pkg/service"
 	"github.com/ignatij/goflow/pkg/storage"
 )
 
 // StartServer runs the GoFlow HTTP server with graceful shutdown.
 // It returns an error if the server fails to start or shut down cleanly.
 func StartServer(port string, store storage.Store) error {
-	svc := service.NewWorkflowService(store)
-	http.HandleFunc("/health", healthHandler)
-	http.HandleFunc("/workflows", workflowsHandler(svc))
+	svc := service.NewWorkflowService(store, log.GetLogger())
+	http.HandleFunc("/health", HealthHandler)
+	http.HandleFunc("/workflows", WorkflowsHandler(svc))
 
 	srv := &http.Server{Addr: ":" + port}
 	errChan := make(chan error, 1)
@@ -66,11 +66,11 @@ func StartServer(port string, store storage.Store) error {
 	return nil
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "GoFlow server is running")
 }
 
-func workflowsHandler(svc *service.WorkflowService) http.HandlerFunc {
+func WorkflowsHandler(svc *service.WorkflowService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

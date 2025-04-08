@@ -1,4 +1,4 @@
-package http
+package http_test
 
 import (
 	"bytes"
@@ -10,9 +10,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/ignatij/goflow/internal/service"
-	internal "github.com/ignatij/goflow/internal/storage"
+	internal_http "github.com/ignatij/goflow/internal/http"
+	"github.com/ignatij/goflow/internal/log"
+	internal_storage "github.com/ignatij/goflow/internal/storage"
 	"github.com/ignatij/goflow/internal/testutil"
+	"github.com/ignatij/goflow/pkg/service"
 	"github.com/ignatij/goflow/pkg/storage"
 	"github.com/stretchr/testify/assert"
 )
@@ -22,13 +24,13 @@ func TestE2EServer(t *testing.T) {
 	defer testDB.Teardown(t)
 
 	newServer := func(store storage.Store) *httptest.Server {
-		svc := service.NewWorkflowService(store)
+		svc := service.NewWorkflowService(store, log.GetLogger())
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/health":
-				healthHandler(w, r)
+				internal_http.HealthHandler(w, r)
 			case "/workflows":
-				workflowsHandler(svc)(w, r)
+				internal_http.WorkflowsHandler(svc)(w, r)
 			default:
 				http.NotFound(w, r)
 			}
@@ -36,7 +38,7 @@ func TestE2EServer(t *testing.T) {
 	}
 
 	newTestStore := func(t *testing.T) storage.Store {
-		store, err := internal.InitStore(testDB.ConnStr)
+		store, err := internal_storage.InitStore(testDB.ConnStr)
 		assert.NoError(t, err)
 		t.Cleanup(func() {
 			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")

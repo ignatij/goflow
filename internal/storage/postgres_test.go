@@ -1,9 +1,10 @@
-package storage
+package storage_test
 
 import (
 	"testing"
 	"time"
 
+	internal_storage "github.com/ignatij/goflow/internal/storage"
 	"github.com/ignatij/goflow/internal/testutil"
 	"github.com/ignatij/goflow/pkg/models"
 	"github.com/ignatij/goflow/pkg/storage"
@@ -15,13 +16,13 @@ func TestPostgresStore(t *testing.T) {
 	defer testDB.Teardown(t)
 
 	// Helper to create a transactional store
-	newTxStore := func(t *testing.T) *PostgresStore {
-		store, err := InitStore(testDB.ConnStr)
+	newTxStore := func(t *testing.T) *internal_storage.PostgresStore {
+		store, err := internal_storage.InitStore(testDB.ConnStr)
 		assert.NoError(t, err)
 		txStore, err := store.Begin()
 		assert.NoError(t, err)
 		t.Cleanup(func() { txStore.Rollback() })
-		return txStore.(*PostgresStore)
+		return txStore.(*internal_storage.PostgresStore)
 	}
 
 	// Test SaveWorkflow
