@@ -105,7 +105,7 @@ func TestE2EServer(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
-		assert.Contains(t, string(body), "{\"id\":1,\"name\":\"test-workflow\",\"status\":\"pending\"")
+		assert.Contains(t, string(body), "{\"id\":1,\"name\":\"test-workflow\",\"status\":\"PENDING\"")
 	})
 
 	t.Run("CreateWorkflowMissingName", func(t *testing.T) {

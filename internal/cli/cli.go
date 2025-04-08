@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ignatij/goflow/internal/log"
@@ -26,7 +28,13 @@ func SetupCLI(rootCmd *cobra.Command) {
 			store := initStore(dbConnStr)
 			defer store.Close()
 			svc := service.NewWorkflowService(store)
-			createWorkflow(svc, args)
+			if len(args) != 1 {
+				log.GetLogger().Errorf("Wrong number of arguments, expected 1 got %v", len(args))
+				fmt.Printf("Wrong number of arguments, expected 1 got %v", len(args))
+				os.Exit(1)
+			}
+			name := strings.Split(args[0], "=")[1]
+			createWorkflow(svc, name)
 		},
 	}
 
@@ -56,39 +64,41 @@ func SetupCLI(rootCmd *cobra.Command) {
 				log.GetLogger().Errorf("Error retrieving db flag: %v", err)
 				os.Exit(1)
 			}
-			id, err := cmd.Flags().GetInt64("id")
-			if err != nil {
-				log.GetLogger().Errorf("Error retrieving id of the workflow: %v", err)
-				os.Exit(1)
-			}
-			status, err := cmd.Flags().GetString("status")
-			if err != nil {
-				log.GetLogger().Errorf("Error retrieving status: %v", err)
-				os.Exit(1)
-			}
 
+			if len(args) != 2 {
+				log.GetLogger().Errorf("Wrong number of args, expected 2, got %v", len(args))
+				fmt.Println("Wrong number of arguments, expected 2")
+				os.Exit(1)
+			}
+			id, err := strconv.Atoi(strings.Split(args[0], "=")[1])
+			if err != nil {
+				log.GetLogger().Errorf("Error parsing id as number: %v", err)
+				fmt.Printf("Error parsing id as number: %v", err)
+				os.Exit(1)
+			}
+			status := strings.Split(args[1], "=")[1]
 			if id == 0 || status == "" {
-				fmt.Println("Error: --id and --status are required")
+				fmt.Println("Error: id and status are required")
 				os.Exit(1)
 			}
 			store := initStore(dbConnStr)
 			defer store.Close()
 			svc := service.NewWorkflowService(store)
-			updateWorkflowStatus(svc, id, status)
+			updateWorkflowStatus(svc, int64(id), status)
 		},
 	}
 
 	rootCmd.AddCommand(createCmd, listCmd, updateWorkflowStatusCmd)
 }
 
-func createWorkflow(svc *service.WorkflowService, args []string) {
-	id, err := svc.CreateWorkflow(args[0])
+func createWorkflow(svc *service.WorkflowService, name string) {
+	id, err := svc.CreateWorkflow(name)
 	if err != nil {
 		log.GetLogger().Errorf("Failed to create workflow: %v", err)
 		fmt.Fprintf(os.Stderr, "Error: failed to create workflow: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Fprintf(os.Stdout, "Created workflow '%s' with ID %d\n", args[0], id)
+	fmt.Fprintf(os.Stdout, "Created workflow '%s' with ID %d\n", name, id)
 }
 
 func updateWorkflowStatus(svc *service.WorkflowService, id int64, status string) {

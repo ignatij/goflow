@@ -43,7 +43,7 @@ func (s *WorkflowService) CreateWorkflow(name string) (id int64, err error) {
 
 	wf := models.Workflow{
 		Name:      name,
-		Status:    "pending",
+		Status:    models.PendingWorkflowStatus,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
