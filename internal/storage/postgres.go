@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+
 	"github.com/ignatij/goflow/pkg/models"
 	"github.com/ignatij/goflow/pkg/storage"
 	"github.com/jmoiron/sqlx"
@@ -134,13 +135,4 @@ func (s *PostgresStore) UpdateTaskStatus(id string, workflowID int64, status, er
 		WHERE id = $4 AND workflow_id = $5`,
 		status, errorMsg, status, id, workflowID)
 	return err
-}
-
-// Remove dependency methods
-func (s *PostgresStore) SaveDependency(d models.Dependency) error {
-	return nil // No-op; dependencies inferred at runtime
-}
-
-func (s *PostgresStore) GetDependencies(workflowID int64) ([]models.Dependency, error) {
-	return []models.Dependency{}, nil // No persisted dependencies
 }

@@ -43,8 +43,6 @@ func TestPostgresStore(t *testing.T) {
 		assert.Equal(t, wf.Name, savedWf.Name)
 		assert.Equal(t, wf.Status, savedWf.Status)
 		assert.Empty(t, savedWf.Tasks)
-		// Dependencies no longer persisted
-		assert.Nil(t, savedWf.Dependencies)
 	})
 
 	// Test GetWorkflow
@@ -71,8 +69,6 @@ func TestPostgresStore(t *testing.T) {
 		assert.Equal(t, wf.Name, retrieved.Name)
 		assert.Len(t, retrieved.Tasks, 2)
 		assert.Equal(t, "t1", retrieved.Tasks[1].ID)
-		// Dependencies not persisted; expect nil
-		assert.Nil(t, retrieved.Dependencies)
 	})
 
 	// GetNonExistingWorkflow

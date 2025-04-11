@@ -27,11 +27,6 @@ type Store interface {
 	// UpdateTaskStatus updates a task status by its ID.
 	UpdateTaskStatus(id string, workflowID int64, status, errorMsg string) error
 
-	// SaveDependency saves task..
-	SaveDependency(d models.Dependency) error
-	// GetDependencies retrieves the list of all dependencies for the given workflow ID.
-	GetDependencies(workflowID int64) ([]models.Dependency, error)
-
 	// Begin starts a new transaction.
 	Begin() (Store, error)
 	// Commit commits already started transaction. Returning an error if the underlying store is not already a transaction.
