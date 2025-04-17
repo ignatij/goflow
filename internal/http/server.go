@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +24,7 @@ func StartServer(port string, store storage.Store) error {
 	svc := service.NewWorkflowService(store, log.GetLogger())
 	http.HandleFunc("/health", HealthHandler)
 	http.HandleFunc("/workflows", WorkflowsHandler(svc))
+	http.HandleFunc("/workflows/", WorkflowByIDHandler(svc))
 
 	srv := &http.Server{Addr: ":" + port}
 	errChan := make(chan error, 1)
@@ -87,6 +90,42 @@ func WorkflowsHandler(svc *service.WorkflowService) http.HandlerFunc {
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			}
 		}
+	}
+}
+
+func WorkflowByIDHandler(svc *service.WorkflowService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract workflow ID from path
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) < 3 {
+			http.Error(w, `{"error":"Invalid URL format"}`, http.StatusBadRequest)
+			return
+		}
+		id, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil {
+			http.Error(w, `{"error":"Invalid workflow ID"}`, http.StatusBadRequest)
+			return
+		}
+
+		// Check for flow execution (e.g., /workflows/123/flows/report)
+		if r.URL.Path != fmt.Sprintf("/workflows/%d", id) {
+			parts := strings.Split(r.URL.Path, "/")
+			if len(parts) == 5 && parts[3] == "flows" && r.Method == http.MethodPost {
+				flowName := parts[4]
+				executeFlowHTTP(w, r, svc, id, flowName)
+				return
+			}
+			http.Error(w, `{"error":"Invalid URL"}`, http.StatusBadRequest)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "Method not allowed"})
+			return
+		}
+
+		getWorkflowHTTP(w, r, svc, id)
 	}
 }
 
@@ -198,4 +237,32 @@ func listWorkflowsHTTP(w http.ResponseWriter, r *http.Request, svc *service.Work
 		log.GetLogger().Errorf("Failed to encode response: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
+}
+
+func getWorkflowHTTP(w http.ResponseWriter, r *http.Request, svc *service.WorkflowService, id int64) {
+	wf, err := svc.GetWorkflow(id)
+	if err != nil {
+		log.GetLogger().Errorf("Failed to get workflow %d: %v", id, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Failed to get workflow: %v", err)})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(wf)
+}
+
+func executeFlowHTTP(w http.ResponseWriter, r *http.Request, svc *service.WorkflowService, workflowID int64, flowName string) {
+	result, err := svc.ExecuteFlow(workflowID, flowName)
+	if err != nil {
+		log.GetLogger().Errorf("Failed to execute flow '%s' for workflow %d: %v", flowName, workflowID, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Failed to execute flow: %v", err)})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"result": result,
+	})
 }

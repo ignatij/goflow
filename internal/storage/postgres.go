@@ -109,7 +109,9 @@ func (s *PostgresStore) UpdateWorkflowStatus(id int64, status models.WorkflowSta
 }
 
 func (s *PostgresStore) SaveTask(t models.Task) error {
-	_, err := s.db.Exec("INSERT INTO tasks (id, workflow_id, name, status, retries, attempts, error_msg, started_at, finished_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+	_, err := s.db.Exec(`
+		INSERT INTO tasks (id, workflow_id, name, status, retries, attempts, error_msg, started_at, finished_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (id, workflow_id) DO NOTHING`,
 		t.ID, t.WorkflowID, t.Name, t.Status, t.Retries, t.Attempts, t.ErrorMsg, t.StartedAt, t.FinishedAt)
 	return err
 }
