@@ -21,6 +21,9 @@ import (
 )
 
 func TestE2EServer(t *testing.T) {
+	testDB := testutil.SetupTestDB(t)
+	defer testDB.Teardown(t)
+
 	newServer := func(store storage.Store) *httptest.Server {
 		svc := service.NewWorkflowService(store, log.GetLogger())
 		mux := http.NewServeMux()
@@ -50,18 +53,17 @@ func TestE2EServer(t *testing.T) {
 	}
 
 	newTestStore := func(t *testing.T) storage.Store {
-		testDB := testutil.SetupTestDB(t)
-		t.Cleanup(func() {
-			testDB.Teardown(t)
-		})
-
 		store, err := internal_storage.InitStore(testDB.ConnStr)
 		assert.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
+			assert.NoError(t, err)
+			store.Close()
+		})
 		return store
 	}
 
 	t.Run("HealthCheck", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServer(store)
 		defer srv.Close()
@@ -76,7 +78,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("CreateWorkflow", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServer(store)
 		defer srv.Close()
@@ -100,7 +101,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("ListWorkflows", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServer(store)
 		defer srv.Close()
@@ -126,7 +126,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("CreateWorkflowMissingName", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServer(store)
 		defer srv.Close()
@@ -148,7 +147,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("ListEmptyWorkflows", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServer(store)
 		defer srv.Close()
@@ -163,7 +161,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("UpdateWorkflowStatus", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServer(store)
 		defer srv.Close()
@@ -217,7 +214,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("GetWorkflow", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServer(store)
 		defer srv.Close()
@@ -259,7 +255,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("ExecuteNonExistingFlow", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServer(store)
 		defer srv.Close()
@@ -320,7 +315,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("ExecuteFlow", func(t *testing.T) {
-		t.Parallel()
 		store := newTestStore(t)
 		srv := newServerWithFlow(store)
 		defer srv.Close()
