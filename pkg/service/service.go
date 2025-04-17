@@ -93,7 +93,7 @@ func validateTaskFunc(fn TaskFunc) error {
 	if fnType.NumOut() != 2 || fnType.Out(0).Kind() == reflect.Invalid || fnType.Out(1) != reflect.TypeOf((*error)(nil)).Elem() {
 		return errors.New("must return (TaskResult, error)")
 	}
-	// Note: fnType.Out(0) isn’t checked against TaskResult (interface{}) explicitly,
+	// Note: fnType.Out(0) isn't checked against TaskResult (interface{}) explicitly,
 	// as any type satisfies it. This allows flexibility (e.g., string, int).
 	return nil
 }
@@ -197,7 +197,10 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 		results := reflect.ValueOf(fn).Call(args)
 		result, errVal := results[0].Interface(), results[1].Interface()
 		if errVal != nil {
-			err = errVal.(error)
+			err, ok := errVal.(error)
+			if !ok {
+				return nil, fmt.Errorf("expected error type but got %T", errVal)
+			}
 			if isTask {
 				errU := txStore.UpdateTaskStatus(name, workflowID, "FAILED", err.Error())
 				if errU != nil {

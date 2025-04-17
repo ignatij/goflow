@@ -240,6 +240,8 @@ func listWorkflowsHTTP(w http.ResponseWriter, r *http.Request, svc *service.Work
 }
 
 func getWorkflowHTTP(w http.ResponseWriter, r *http.Request, svc *service.WorkflowService, id int64) {
+	// lint issue
+	_ = r
 	wf, err := svc.GetWorkflow(id)
 	if err != nil {
 		log.GetLogger().Errorf("Failed to get workflow %d: %v", id, err)
@@ -253,6 +255,8 @@ func getWorkflowHTTP(w http.ResponseWriter, r *http.Request, svc *service.Workfl
 }
 
 func executeFlowHTTP(w http.ResponseWriter, r *http.Request, svc *service.WorkflowService, workflowID int64, flowName string) {
+	// lint issue
+	_ = r
 	result, err := svc.ExecuteFlow(workflowID, flowName)
 	if err != nil {
 		log.GetLogger().Errorf("Failed to execute flow '%s' for workflow %d: %v", flowName, workflowID, err)
