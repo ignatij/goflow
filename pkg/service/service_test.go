@@ -31,6 +31,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	}
 
 	t.Run("UnregisteredFlow", func(t *testing.T) {
+		t.Parallel()
 		svc := newWorkflowService()
 		wfID, err := svc.CreateWorkflow("test")
 		assert.NoError(t, err)
@@ -41,6 +42,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 	t.Run("UnregisteredTaskInFlow", func(t *testing.T) {
 		svc := newWorkflowService()
+		t.Parallel()
 
 		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data.(string), nil
@@ -66,7 +68,8 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("DuplicateTaskRegistration", func(t *testing.T) {
-		svc := newWorkflowService() // or svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := newWorkflowService()
+		t.Parallel()
 
 		fetchTask1 := func() (service.TaskResult, error) {
 			return "raw data 1", nil
@@ -104,6 +107,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 	t.Run("DuplicateFlowRegistration", func(t *testing.T) {
 		svc := newWorkflowService()
+		t.Parallel()
 
 		fetchTask := func() (service.TaskResult, error) {
 			return "raw data", nil
@@ -145,6 +149,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 	t.Run("InvalidTaskDependencies", func(t *testing.T) {
 		svc := newWorkflowService()
+		t.Parallel()
 
 		processTask := func(args ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := args[0].(string)
@@ -171,13 +176,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		wf, err := svc.GetWorkflow(wfID)
 		assert.NoError(t, err)
 		assert.Equal(t, "testInvalidDeps", wf.Name)
-		assert.Equal(t, models.FailedWorkflowStatus, wf.Status) // Adjust if FAILED
-		assert.Len(t, wf.Tasks, 0)                              // No tasks persisted
+		assert.Equal(t, models.FailedWorkflowStatus, wf.Status)
+		assert.Len(t, wf.Tasks, 0)
 	})
 
 	t.Run("EmptyTaskFlowRegistration", func(t *testing.T) {
-		svc := newWorkflowService() // or service.NewWorkflowService(postgresStore(t), logger{})
-
+		t.Parallel()
+		svc := newWorkflowService()
 		err := svc.RegisterTask("", func() (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
@@ -199,6 +204,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Contains(t, err.Error(), "must be a function")
 	})
 	t.Run("BasicPipeline", func(t *testing.T) {
+		t.Parallel()
 		svc := newWorkflowService()
 
 		fetchTask := func() (service.TaskResult, error) {
@@ -236,6 +242,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("MoreComplexPipeline", func(t *testing.T) {
+		t.Parallel()
 		svc := newWorkflowService()
 
 		fetchTask := func() (service.TaskResult, error) {
@@ -275,6 +282,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("MultipleDependencies", func(t *testing.T) {
+		t.Parallel()
 		svc := newWorkflowService()
 
 		fetchTask := func() (service.TaskResult, error) {
@@ -314,6 +322,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("MultipleFlows", func(t *testing.T) {
+		t.Parallel()
 		svc := newWorkflowService()
 
 		fetchTask := func() (service.TaskResult, error) {
@@ -365,6 +374,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("FailureHandling", func(t *testing.T) {
+		t.Parallel()
 		svc := newWorkflowService()
 
 		fetchTask := func() (service.TaskResult, error) {
@@ -405,6 +415,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("MultipleRuns", func(t *testing.T) {
+		t.Parallel()
 		svc := newWorkflowService()
 		fetchTask := func() (service.TaskResult, error) {
 			return time.Now().String(), nil // Dynamic result
