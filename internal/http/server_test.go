@@ -24,15 +24,6 @@ func TestE2EServer(t *testing.T) {
 	testDB := testutil.SetupTestDB(t)
 	defer testDB.Teardown(t)
 
-	newServer := func(store storage.Store) *httptest.Server {
-		svc := service.NewWorkflowService(store, log.GetLogger())
-		mux := http.NewServeMux()
-		mux.HandleFunc("/health", internal_http.HealthHandler)
-		mux.HandleFunc("/workflows", internal_http.WorkflowsHandler(svc))
-		mux.HandleFunc("/workflows/", internal_http.WorkflowByIDHandler(svc))
-		return httptest.NewServer(mux)
-	}
-
 	newServerWithFlow := func(store storage.Store) *httptest.Server {
 		svc := service.NewWorkflowService(store, log.GetLogger())
 		// Register a test task and flow
@@ -52,22 +43,20 @@ func TestE2EServer(t *testing.T) {
 		return httptest.NewServer(mux)
 	}
 
-	newTestStore := func(t *testing.T) storage.Store {
-		store, err := internal_storage.InitStore(testDB.ConnStr)
-		assert.NoError(t, err)
-		t.Cleanup(func() {
-			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
-			assert.NoError(t, err)
-			store.Close()
-		})
-		return store
-	}
+	store, err := internal_storage.InitStore(testDB.ConnStr)
+	assert.NoError(t, err)
+
+	svc := service.NewWorkflowService(store, log.GetLogger())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", internal_http.HealthHandler)
+	mux.HandleFunc("/workflows", internal_http.WorkflowsHandler(svc))
+	mux.HandleFunc("/workflows/", internal_http.WorkflowByIDHandler(svc))
+	srv := httptest.NewServer(mux)
+
+	defer store.Close()
+	defer srv.Close()
 
 	t.Run("HealthCheck", func(t *testing.T) {
-		store := newTestStore(t)
-		srv := newServer(store)
-		defer srv.Close()
-
 		resp, err := srv.Client().Get(srv.URL + "/health")
 		assert.NoError(t, err)
 		defer resp.Body.Close()
@@ -78,10 +67,10 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("CreateWorkflow", func(t *testing.T) {
-		store := newTestStore(t)
-		srv := newServer(store)
-		defer srv.Close()
-
+		t.Cleanup(func() {
+			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
+			assert.NoError(t, err)
+		})
 		// Prepare JSON payload
 		jsonData := []byte(`{"name": "test-workflow"}`)
 		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
@@ -101,10 +90,10 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("ListWorkflows", func(t *testing.T) {
-		store := newTestStore(t)
-		srv := newServer(store)
-		defer srv.Close()
-
+		t.Cleanup(func() {
+			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
+			assert.NoError(t, err)
+		})
 		// Prepare JSON payload
 		jsonData := []byte(`{"name": "test-workflow"}`)
 		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
@@ -126,10 +115,10 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("CreateWorkflowMissingName", func(t *testing.T) {
-		store := newTestStore(t)
-		srv := newServer(store)
-		defer srv.Close()
-
+		t.Cleanup(func() {
+			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
+			assert.NoError(t, err)
+		})
 		// Prepare JSON payload
 		jsonData := []byte(`{"name": ""}`)
 		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
@@ -147,9 +136,6 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("ListEmptyWorkflows", func(t *testing.T) {
-		store := newTestStore(t)
-		srv := newServer(store)
-		defer srv.Close()
 
 		resp, err := srv.Client().Get(srv.URL + "/workflows")
 		assert.NoError(t, err)
@@ -161,10 +147,10 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("UpdateWorkflowStatus", func(t *testing.T) {
-		store := newTestStore(t)
-		srv := newServer(store)
-		defer srv.Close()
-
+		t.Cleanup(func() {
+			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
+			assert.NoError(t, err)
+		})
 		// Prepare JSON payload
 		jsonData := []byte(`{"name": "test-workflow"}`)
 		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
@@ -214,10 +200,10 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("GetWorkflow", func(t *testing.T) {
-		store := newTestStore(t)
-		srv := newServer(store)
-		defer srv.Close()
-
+		t.Cleanup(func() {
+			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
+			assert.NoError(t, err)
+		})
 		// Create a workflow
 		jsonData := []byte(`{"name": "test-workflow"}`)
 		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
@@ -255,10 +241,10 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("ExecuteNonExistingFlow", func(t *testing.T) {
-		store := newTestStore(t)
-		srv := newServer(store)
-		defer srv.Close()
-
+		t.Cleanup(func() {
+			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
+			assert.NoError(t, err)
+		})
 		// Create a workflow
 		jsonData := []byte(`{"name": "dataPipeline"}`)
 		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
@@ -315,10 +301,12 @@ func TestE2EServer(t *testing.T) {
 	})
 
 	t.Run("ExecuteFlow", func(t *testing.T) {
-		store := newTestStore(t)
 		srv := newServerWithFlow(store)
 		defer srv.Close()
-
+		t.Cleanup(func() {
+			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")
+			assert.NoError(t, err)
+		})
 		// Create a workflow
 		jsonData := []byte(`{"name": "test-process"}`)
 		req, err := http.NewRequest("POST", srv.URL+"/workflows", bytes.NewBuffer(jsonData))
