@@ -14,6 +14,7 @@ type mockStore struct {
 	nextID    int64
 }
 
+// NewMockStore creates a new mock store
 func NewMockStore() *mockStore {
 	return &mockStore{
 		workflows: make(map[int64]models.Workflow),
@@ -27,6 +28,7 @@ func (m *mockStore) Commit() error         { return nil }
 func (m *mockStore) Rollback() error       { return nil }
 func (m *mockStore) Close() error          { return nil }
 
+// SaveWorkflow saves a workflow and assigns an ID
 func (m *mockStore) SaveWorkflow(wf models.Workflow) (int64, error) {
 	wf.ID = m.nextID
 	m.nextID++
@@ -34,6 +36,7 @@ func (m *mockStore) SaveWorkflow(wf models.Workflow) (int64, error) {
 	return wf.ID, nil
 }
 
+// GetWorkflow retrieves a workflow by ID
 func (m *mockStore) GetWorkflow(id int64) (models.Workflow, error) {
 	wf, ok := m.workflows[id]
 	if !ok {
@@ -44,6 +47,7 @@ func (m *mockStore) GetWorkflow(id int64) (models.Workflow, error) {
 	return result, nil
 }
 
+// ListWorkflows lists all workflows
 func (m *mockStore) ListWorkflows() ([]models.Workflow, error) {
 	var wfs []models.Workflow
 	for _, wf := range m.workflows {
@@ -52,6 +56,7 @@ func (m *mockStore) ListWorkflows() ([]models.Workflow, error) {
 	return wfs, nil
 }
 
+// UpdateWorkflowStatus updates a workflow's status
 func (m *mockStore) UpdateWorkflowStatus(id int64, status models.WorkflowStatus) error {
 	wf, ok := m.workflows[id]
 	if !ok {
@@ -63,10 +68,11 @@ func (m *mockStore) UpdateWorkflowStatus(id int64, status models.WorkflowStatus)
 	return nil
 }
 
+// SaveTask saves a task
 func (m *mockStore) SaveTask(t models.Task) error {
-	// Check if task already exists for this workflowID
+	// Check if task already exists for this workflowID and executionID
 	for _, existing := range m.tasks[t.WorkflowID] {
-		if existing.ID == t.ID {
+		if existing.ID == t.ID && existing.ExecutionID == t.ExecutionID {
 			return nil // Task already exists, skip appending
 		}
 	}
@@ -75,6 +81,7 @@ func (m *mockStore) SaveTask(t models.Task) error {
 	return nil
 }
 
+// GetTask retrieves a task by ID and workflow ID
 func (m *mockStore) GetTask(id string, workflowID int64) (models.Task, error) {
 	for _, t := range m.tasks[workflowID] {
 		if t.ID == id {
@@ -84,6 +91,7 @@ func (m *mockStore) GetTask(id string, workflowID int64) (models.Task, error) {
 	return models.Task{}, ErrNotFound
 }
 
+// UpdateTaskStatus updates a task's status and error message
 func (m *mockStore) UpdateTaskStatus(id string, workflowID int64, status, errorMsg string) error {
 	tasks := m.tasks[workflowID]
 	for i, t := range tasks {
@@ -102,6 +110,7 @@ func (m *mockStore) UpdateTaskStatus(id string, workflowID int64, status, errorM
 	return ErrNotFound
 }
 
+// SaveDependency and GetDependencies are no-ops
 func (m *mockStore) SaveDependency(d models.Dependency) error { return nil }
 func (m *mockStore) GetDependencies(workflowID int64) ([]models.Dependency, error) {
 	return []models.Dependency{}, nil
