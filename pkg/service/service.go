@@ -21,7 +21,7 @@ type Logger interface {
 type TaskResult interface{}
 
 // TaskFunc is a function defining task/flow, with dependencies as parameters
-type TaskFunc interface{}
+type TaskFunc func(...TaskResult) (TaskResult, error)
 
 // WorkflowService manages workflow instances and their flow executions.
 // A workflow is a specific instance of a pipeline run, persisted with a unique ID.
@@ -55,10 +55,6 @@ func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string) 
 	if len(name) == 0 {
 		return errors.New("empty task name")
 	}
-	fnType := reflect.TypeOf(fn)
-	if fnType.NumIn() != len(deps) {
-		return fmt.Errorf("task '%s' has %d dependencies but function expects %d arguments", name, len(deps), fnType.NumIn())
-	}
 	s.tasks[name] = fn
 	s.taskDeps[name] = deps
 	s.logger.Infof("Registered task '%s' with dependencies '%v'", name, deps)
@@ -73,10 +69,6 @@ func (s *WorkflowService) RegisterFlow(name string, fn TaskFunc, deps []string) 
 	if err := validateTaskFunc(fn); err != nil {
 		return fmt.Errorf("invalid flow function for '%s': %v", name, err)
 	}
-	fnType := reflect.TypeOf(fn)
-	if fnType.NumIn() != len(deps) {
-		return fmt.Errorf("flow '%s' has %d dependencies but function expects %d arguments", name, len(deps), fnType.NumIn())
-	}
 	s.flows[name] = fn
 	s.flowDeps[name] = deps
 	s.logger.Infof("Registered flow '%s' with dependencies %v", name, deps)
@@ -86,7 +78,7 @@ func (s *WorkflowService) RegisterFlow(name string, fn TaskFunc, deps []string) 
 // validateTaskFunc checks if the function matches the expected signature
 func validateTaskFunc(fn TaskFunc) error {
 	fnType := reflect.TypeOf(fn)
-	if fnType == nil || fnType.Kind() != reflect.Func {
+	if fn == nil || fnType.Kind() != reflect.Func {
 		return errors.New("must be a function")
 	}
 	// Ensure 2 returns: first is any type (TaskResult), second is error

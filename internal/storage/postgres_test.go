@@ -64,7 +64,7 @@ func TestPostgresStore(t *testing.T) {
 		assert.Len(t, retrieved.Tasks, 2)
 		assert.Equal(t, "t0", retrieved.Tasks[0].ID)
 		assert.Equal(t, "wf1:flow1", retrieved.Tasks[0].ExecutionID)
-		assert.Empty(t, retrieved.Tasks[0].Dependencies)
+		assert.Equal(t, []string{}, retrieved.Tasks[0].Dependencies)
 		assert.Equal(t, "t1", retrieved.Tasks[1].ID)
 		assert.Equal(t, "wf1:flow1", retrieved.Tasks[1].ExecutionID)
 		assert.Equal(t, []string{"t0"}, retrieved.Tasks[1].Dependencies)
@@ -247,7 +247,7 @@ func TestPostgresStore(t *testing.T) {
 		assert.Equal(t, task.Name, savedTask.Name)
 		assert.Equal(t, task.Retries, savedTask.Retries)
 		assert.Equal(t, task.ExecutionID, savedTask.ExecutionID)
-		assert.Empty(t, savedTask.Dependencies)
+		assert.Equal(t, []string{}, savedTask.Dependencies)
 	})
 
 	// Test SaveTaskWithEmptyDependencies
@@ -348,7 +348,7 @@ func TestPostgresStore(t *testing.T) {
 			retrieved, err := store.GetTask(expected.ID, wfID)
 			assert.NoError(t, err)
 			if expected.Dependencies == nil {
-				assert.Empty(t, retrieved.Dependencies)
+				assert.Equal(t, []string{}, retrieved.Dependencies)
 			} else {
 				// Filter out empty strings for comparison
 				filtered := []string{}
@@ -371,7 +371,7 @@ func TestPostgresStore(t *testing.T) {
 		for i, expected := range tasks {
 			assert.Equal(t, expected.ID, retrievedWf.Tasks[i].ID)
 			if expected.Dependencies == nil {
-				assert.Empty(t, retrievedWf.Tasks[i].Dependencies)
+				assert.Equal(t, []string{}, retrievedWf.Tasks[i].Dependencies)
 			} else {
 				// Filter out empty strings
 				filtered := []string{}
