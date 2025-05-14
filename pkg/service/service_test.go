@@ -67,7 +67,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("DuplicateTaskRegistration", func(t *testing.T) {
-		svc := newWorkflowService() // or svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := newWorkflowService()
 
 		fetchTask1 := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 1", nil
@@ -89,7 +89,6 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 		wfID, err := svc.CreateWorkflow("testDuplicateTask")
 		assert.NoError(t, err)
-
 		result, err := svc.ExecuteFlow(wfID, "pipeline")
 		assert.NoError(t, err)
 		assert.Equal(t, "processed: raw data 2", result) // Uses fetchTask2
@@ -177,7 +176,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("EmptyTaskFlowRegistration", func(t *testing.T) {
-		svc := newWorkflowService() // or service.NewWorkflowService(postgresStore(t), logger{})
+		svc := newWorkflowService()
 
 		err := svc.RegisterTask("", func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
@@ -389,7 +388,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 		_, err = svc.ExecuteFlow(wfID, "testFlow")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "execution of 'fail' failed: task failed")
+		assert.Contains(t, err.Error(), "execution of flow 'testFlow' failed")
 
 		// Verify workflow and task status
 		wf, err := svc.GetWorkflow(wfID)
@@ -500,6 +499,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.True(t, taskIDs["task2"])
 	})
 }
+
 func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	testDB := testutil.SetupTestDB(t)
 	defer testDB.Teardown(t)
@@ -870,7 +870,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 		_, err = svc.ExecuteFlow(wfID, "testFlow")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "execution of 'fail' failed: task failed")
+		assert.Contains(t, err.Error(), "execution of flow 'testFlow' failed")
 
 		// Verify workflow and task status
 		wf, err := svc.GetWorkflow(wfID)

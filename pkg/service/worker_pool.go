@@ -19,37 +19,43 @@ type executionState struct {
 	taskCount    int           // Total tasks in execution
 	pendingCount int           // Tasks not yet completed or failed
 	completeChan chan struct{} // Signals completion or error
+	mu           sync.RWMutex
 }
 
 // WorkerPool manages parallel task execution with dependency enforcement
 type WorkerPool struct {
-	tasks      map[string]TaskFunc
-	taskDeps   map[string][]string
-	store      storage.Store
-	logger     Logger
-	taskChan   chan models.Task
-	executions map[string]*executionState
-	mu         sync.RWMutex
-	wg         sync.WaitGroup
-	ctx        context.Context
-	cancel     context.CancelFunc
+	tasks       map[string]TaskFunc
+	taskDeps    map[string][]string
+	taskTypes   map[string]string // can be "task" or "flow"
+	store       storage.Store
+	logger      Logger
+	taskService *TaskService
+	taskChan    chan models.Task
+	executions  map[string]*executionState
+	mu          sync.RWMutex
+	wg          sync.WaitGroup
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 func NewWorkerPool(
 	tasks map[string]TaskFunc,
 	taskDeps map[string][]string,
 	store storage.Store,
+	taskService *TaskService,
 	logger Logger) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
-		tasks:      tasks,
-		taskDeps:   taskDeps,
-		store:      store,
-		logger:     logger,
-		taskChan:   make(chan models.Task, 100),
-		executions: make(map[string]*executionState),
-		ctx:        ctx,
-		cancel:     cancel,
+		tasks:       tasks,
+		taskDeps:    taskDeps,
+		taskTypes:   make(map[string]string),
+		store:       store,
+		taskService: taskService,
+		logger:      logger,
+		taskChan:    make(chan models.Task, 100),
+		executions:  make(map[string]*executionState),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -58,7 +64,6 @@ func (wp *WorkerPool) Start(workers int) {
 	if workers <= 0 {
 		workers = runtime.NumCPU()
 	}
-
 	for i := 0; i < workers; i++ {
 		wp.wg.Add(1)
 		go wp.worker()
@@ -66,11 +71,12 @@ func (wp *WorkerPool) Start(workers int) {
 }
 
 // UpdateTasks updates the tasks and dependencies
-func (wp *WorkerPool) UpdateTasks(tasks map[string]TaskFunc, taskDeps map[string][]string) {
+func (wp *WorkerPool) UpdateTasks(tasks map[string]TaskFunc, taskDeps map[string][]string, taskTypes map[string]string) {
 	wp.mu.Lock()
 	defer wp.mu.Unlock()
 	wp.tasks = tasks
 	wp.taskDeps = taskDeps
+	wp.taskTypes = taskTypes
 }
 
 // ExecuteTasks executes tasks for a specific workflow and flow
@@ -88,6 +94,7 @@ func (wp *WorkerPool) ExecuteTasks(execID string, wfID int64, taskIDs []string) 
 		taskCount:    len(taskIDs),
 		pendingCount: len(taskIDs),
 		completeChan: make(chan struct{}),
+		mu:           sync.RWMutex{},
 	}
 	wp.executions[execID] = state
 	wp.mu.Unlock()
@@ -104,8 +111,9 @@ func (wp *WorkerPool) ExecuteTasks(execID string, wfID int64, taskIDs []string) 
 		if deps == nil {
 			deps = []string{}
 		}
+		isTask := wp.taskTypes[taskID] == "task"
+		wp.mu.RUnlock()
 
-		// Save task to store
 		task := models.Task{
 			ID:           taskID,
 			WorkflowID:   wfID,
@@ -116,13 +124,17 @@ func (wp *WorkerPool) ExecuteTasks(execID string, wfID int64, taskIDs []string) 
 			Retries:      2,
 		}
 
-		if err := wp.store.SaveTask(task); err != nil {
-			wp.logger.Errorf("Failed to save task %s: %v", taskID, err)
-			wp.cleanupExecution(execID)
-			return nil, map[string]error{taskID: err}
+		if isTask {
+			if err := wp.taskService.SaveTask(task); err != nil {
+				wp.logger.Errorf("Failed to save task %s: %v", taskID, err)
+				wp.cleanupExecution(execID)
+				return nil, map[string]error{taskID: err}
+			}
 		}
 
+		state.mu.Lock()
 		state.taskStatus[taskID] = "PENDING"
+		state.mu.Unlock()
 
 		// Queue task
 		select {
@@ -143,6 +155,7 @@ func (wp *WorkerPool) ExecuteTasks(execID string, wfID int64, taskIDs []string) 
 		return nil, map[string]error{execID: fmt.Errorf("execution timed out")}
 	}
 
+	state.mu.RLock()
 	results := make(map[string]TaskResult, len(state.taskResults))
 	for k, taskResult := range state.taskResults {
 		results[k] = taskResult
@@ -152,6 +165,7 @@ func (wp *WorkerPool) ExecuteTasks(execID string, wfID int64, taskIDs []string) 
 	for k, taskErr := range state.taskErrors {
 		errors[k] = taskErr
 	}
+	state.mu.RUnlock()
 
 	wp.cleanupExecution(execID)
 	return results, errors
@@ -163,125 +177,126 @@ func (wp *WorkerPool) worker() {
 		if wp.ctx.Err() != nil {
 			return
 		}
-		if wp.canRunTask(task) {
-			wp.executeTask(task)
-		} else {
-			select {
-			case wp.taskChan <- task:
-			case <-wp.ctx.Done():
-			}
-		}
-
+		wp.executeTask(task)
 	}
 }
 
-func (wp *WorkerPool) canRunTask(task models.Task) bool {
+func (wp *WorkerPool) canRunTask(task models.Task) (bool, error) {
 	wp.mu.RLock()
+	defer wp.mu.RUnlock()
 	if _, ok := wp.executions[task.ExecutionID]; !ok {
 		wp.logger.Errorf("Error trying to run task %s: Execution ID: %s not found", task.ID, task.ExecutionID)
-		wp.mu.RUnlock()
-		return false
+		return false, fmt.Errorf("execution %s not found", task.ExecutionID)
 	}
-	wp.mu.RUnlock()
-	for _, dep := range task.Dependencies {
-		d, err := wp.store.GetTask(dep, task.WorkflowID)
-		if err != nil {
-			wp.logger.Errorf("Error retrieving dependency %s: %v", dep, err)
-			return false
-		}
-		if d.Status != "COMPLETED" {
-			wp.logger.Infof("Cannot run task %s as dependency %s is not in status COMPLETED", task.ID, dep)
-			return false
-		}
-	}
-	return true
+	return wp.taskService.CanRunTask(task)
 }
 
 func (wp *WorkerPool) executeTask(task models.Task) {
-	latestTask, err := wp.store.GetTask(task.ID, task.WorkflowID)
+	// check if task can run
+	canRun, err := wp.canRunTask(task)
 	if err != nil {
-		wp.logger.Errorf("Error retrieving task with id %s: %v", task.ID, err)
+		wp.markTaskFailed(task, err)
+		return
+	}
+	if !canRun {
+		select {
+		case wp.taskChan <- task:
+			wp.logger.Infof("Requeued task %s due to unready dependencies", task.ID)
+		case <-wp.ctx.Done():
+			wp.logger.Infof("Skipped requeue of task %s due to context cancellation", task.ID)
+		}
 		return
 	}
 
-	if latestTask.Status != "PENDING" {
-		wp.logger.Infof("Task status of task with id: %s isn't pending. Skipping...", task.ID)
-		return
-	}
-
-	// Check execution
+	// check execution
 	wp.mu.RLock()
 	state, ok := wp.executions[task.ExecutionID]
+	wp.mu.RUnlock()
 	if !ok {
-		wp.mu.RUnlock()
 		wp.logger.Errorf("Error executing task with id %s: Unknown execution with id: %s", task.ID, task.ExecutionID)
 		return
 	}
-	wp.mu.RUnlock()
 
-	// Mark as running
-	task.Status = "RUNNING"
-	startedAt := time.Now()
-	task.StartedAt = &startedAt
-	if err := wp.store.SaveTask(task); err != nil {
-		wp.logger.Errorf("Error executing task with id %s: Cannot update task status to 'RUNNING'", task.ID)
-		return
-	}
-
-	// Get task function
+	// get task function
 	wp.mu.RLock()
 	taskFn, ok := wp.tasks[task.ID]
 	wp.mu.RUnlock()
 	if !ok {
 		err := fmt.Errorf("task function %s not found", task.ID)
 		wp.logger.Errorf("Error retrieving task function: %v", err)
-		wp.markTaskFailed(task, state, err)
+		wp.markTaskFailed(task, err)
 		return
 	}
 
-	// Collect dependency results
 	args := make([]TaskResult, len(task.Dependencies))
 	for i, dependency := range task.Dependencies {
+		state.mu.RLock()
 		res, ok := state.taskResults[dependency]
+		state.mu.RUnlock()
 		if !ok {
 			err := fmt.Errorf("result for dependency %s not found", dependency)
 			wp.logger.Errorf("Error retrieving dependency result: %v", err)
-			wp.markTaskFailed(task, state, err)
+			wp.markTaskFailed(task, err)
 			return
 		}
 		args[i] = res
 	}
 
+	// Check if this is a task (not a flow) to update status
+	wp.mu.RLock()
+	isTask := wp.taskTypes[task.ID] == "task"
+	wp.mu.RUnlock()
 	// Execute task with retries
+	if isTask {
+		if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "RUNNING", ""); updateErr != nil {
+			wp.logger.Errorf("Failed to update task %s status to RUNNING: %v", task.ID, updateErr)
+			return
+		}
+	}
+
 	var result TaskResult
-	for attempt := 0; attempt < task.Retries; attempt++ {
-		result, err = taskFn(args...)
+	var taskErr error
+	for attempt := 0; attempt <= task.Retries; attempt++ {
+		result, taskErr = taskFn(args...)
 		if err == nil {
 			break
 		}
 		task.Attempts++
-		task.ErrorMsg = err.Error()
+		task.ErrorMsg = taskErr.Error()
 		if attempt < task.Retries {
-			wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, err)
+			wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
 			time.Sleep(100 * time.Millisecond) // backoff
 			continue
 		}
 	}
 
-	finishedAt := time.Now()
-	task.FinishedAt = &finishedAt
-
-	// Update task state
-	if err != nil {
-		task.Status = "FAILED"
-		task.ErrorMsg = err.Error()
-		state.taskErrors[task.ID] = err
+	state.mu.Lock()
+	if taskErr != nil {
+		task.ErrorMsg = taskErr.Error()
+		state.taskErrors[task.ID] = taskErr
+		if isTask {
+			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "FAILED", taskErr.Error()); updateErr != nil {
+				wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
+				return
+			}
+		}
 	} else {
-		task.Status = "COMPLETED"
 		state.taskResults[task.ID] = result
-	}
+		if isTask {
+			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "COMPLETED", ""); updateErr != nil {
+				wp.logger.Errorf("Failed to update task %s status to COMPLETED: %v", task.ID, updateErr)
+				return
+			}
 
-	state.taskStatus[task.ID] = task.Status
+			task.Status = "COMPLETED"
+			finishedAt := time.Now()
+			task.FinishedAt = &finishedAt
+			if saveErr := wp.taskService.SaveTask(task); saveErr != nil {
+				wp.logger.Errorf("Failed to save task %s with FinishedAt: %v", task.ID, saveErr)
+				return
+			}
+		}
+	}
 	state.pendingCount--
 	if state.pendingCount == 0 || len(state.taskErrors) > 0 {
 		select {
@@ -289,22 +304,37 @@ func (wp *WorkerPool) executeTask(task models.Task) {
 		default:
 		}
 	}
-
-	if err := wp.store.SaveTask(task); err != nil {
-		wp.logger.Errorf("Failed to save task %s: %v", task.ID, err)
-		return
-	}
+	state.mu.Unlock()
 }
 
-func (wp *WorkerPool) markTaskFailed(task models.Task, state *executionState, err error) {
-	task.Status = "FAILED"
-	task.ErrorMsg = err.Error()
-	if saveErr := wp.store.SaveTask(task); saveErr != nil {
-		wp.logger.Errorf("Failed to save task %s: %v", task.ID, saveErr)
+func (wp *WorkerPool) markTaskFailed(task models.Task, err error) {
+	wp.mu.RLock()
+	state, ok := wp.executions[task.ExecutionID]
+	wp.mu.RUnlock()
+	if !ok {
+		wp.logger.Errorf("Cannot mark task %s as failed: execution %s not found", task.ID, task.ExecutionID)
+		return
 	}
 
+	// Check if this is a task (not a flow) to update status
+	wp.mu.RLock()
+	isTask := wp.taskTypes[task.ID] == "task"
+	wp.mu.RUnlock()
+
+	state.mu.Lock()
 	state.taskStatus[task.ID] = "FAILED"
 	state.taskErrors[task.ID] = err
+	state.mu.Unlock()
+
+	task.ErrorMsg = err.Error()
+
+	if isTask {
+		if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "FAILED", err.Error()); updateErr != nil {
+			wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
+		}
+	}
+
+	state.mu.Lock()
 	state.pendingCount--
 	if state.pendingCount == 0 || len(state.taskErrors) > 0 {
 		select {
@@ -312,7 +342,7 @@ func (wp *WorkerPool) markTaskFailed(task models.Task, state *executionState, er
 		default:
 		}
 	}
-
+	state.mu.Unlock()
 }
 
 func (wp *WorkerPool) cleanupExecution(execID string) {
