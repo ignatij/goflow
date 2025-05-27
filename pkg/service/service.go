@@ -166,7 +166,6 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 
 	// Compute execution order
 	order, err := s.topologicalSort(flowName)
-	_ = order
 	if err != nil {
 		errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus)
 		if errU != nil {
@@ -183,7 +182,7 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 
 	// // Execute tasks and flows using WorkerPool
 	execID := fmt.Sprintf("exec-%d-%s", workflowID, flowName)
-	results, errs := s.wp.ExecuteTasks(execID, workflowID, order)
+	results, errs := s.wp.ExecuteTasks(execID, WorkflowContext{WorkflowID: workflowID, Results: s.results[workflowID], ResultsLock: &sync.RWMutex{}}, order)
 
 	// store results
 	s.mu.Lock()
