@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/ignatij/goflow/pkg/models"
@@ -21,7 +22,7 @@ type Logger interface {
 type TaskResult interface{}
 
 // TaskFunc is a function defining task/flow, with dependencies as parameters
-type TaskFunc interface{}
+type TaskFunc func(...TaskResult) (TaskResult, error)
 
 // WorkflowService manages workflow instances and their flow executions.
 // A workflow is a specific instance of a pipeline run, persisted with a unique ID.
@@ -34,9 +35,14 @@ type WorkflowService struct {
 	flows    map[string]TaskFunc
 	flowDeps map[string][]string
 	results  map[int64]map[string]TaskResult
+	wp       *WorkerPool
+	mu       sync.RWMutex
 }
 
 func NewWorkflowService(store storage.Store, logger Logger) *WorkflowService {
+	taskService := NewTaskService(store, logger)
+	wp := NewWorkerPool(make(map[string]TaskFunc), make(map[string][]string), store, taskService, logger)
+	wp.Start(0)
 	return &WorkflowService{
 		store:    store,
 		logger:   logger,
@@ -44,7 +50,9 @@ func NewWorkflowService(store storage.Store, logger Logger) *WorkflowService {
 		taskDeps: make(map[string][]string),
 		flows:    make(map[string]TaskFunc),
 		flowDeps: make(map[string][]string),
-		results:  make(map[int64]map[string]TaskResult)}
+		results:  make(map[int64]map[string]TaskResult),
+		wp:       wp,
+	}
 }
 
 // RegisterTask registers a task, inferring dependencies from parameter names
@@ -55,12 +63,25 @@ func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string) 
 	if len(name) == 0 {
 		return errors.New("empty task name")
 	}
-	fnType := reflect.TypeOf(fn)
-	if fnType.NumIn() != len(deps) {
-		return fmt.Errorf("task '%s' has %d dependencies but function expects %d arguments", name, len(deps), fnType.NumIn())
-	}
+	s.mu.Lock()
 	s.tasks[name] = fn
 	s.taskDeps[name] = deps
+	// Update WorkerPool
+	combinedTasks := make(map[string]TaskFunc)
+	combinedDeps := make(map[string][]string)
+	combinedTypes := make(map[string]string)
+	for k, v := range s.tasks {
+		combinedTasks[k] = v
+		combinedDeps[k] = s.taskDeps[k]
+		combinedTypes[k] = "task"
+	}
+	for k, v := range s.flows {
+		combinedTasks[k] = v
+		combinedDeps[k] = s.flowDeps[k]
+		combinedTypes[k] = "flow"
+	}
+	s.mu.Unlock()
+	s.wp.UpdateTasks(combinedTasks, combinedDeps, combinedTypes)
 	s.logger.Infof("Registered task '%s' with dependencies '%v'", name, deps)
 	return nil
 }
@@ -73,12 +94,26 @@ func (s *WorkflowService) RegisterFlow(name string, fn TaskFunc, deps []string) 
 	if err := validateTaskFunc(fn); err != nil {
 		return fmt.Errorf("invalid flow function for '%s': %v", name, err)
 	}
-	fnType := reflect.TypeOf(fn)
-	if fnType.NumIn() != len(deps) {
-		return fmt.Errorf("flow '%s' has %d dependencies but function expects %d arguments", name, len(deps), fnType.NumIn())
-	}
+	s.mu.Lock()
 	s.flows[name] = fn
 	s.flowDeps[name] = deps
+	// Update WorkerPool
+	combinedTasks := make(map[string]TaskFunc)
+	combinedDeps := make(map[string][]string)
+	combinedTypes := make(map[string]string)
+
+	for k, v := range s.tasks {
+		combinedTasks[k] = v
+		combinedDeps[k] = s.taskDeps[k]
+		combinedTypes[k] = "task"
+	}
+	for k, v := range s.flows {
+		combinedTasks[k] = v
+		combinedDeps[k] = s.flowDeps[k]
+		combinedTypes[k] = "flow"
+	}
+	s.wp.UpdateTasks(combinedTasks, combinedDeps, combinedTypes)
+	s.mu.Unlock()
 	s.logger.Infof("Registered flow '%s' with dependencies %v", name, deps)
 	return nil
 }
@@ -86,7 +121,7 @@ func (s *WorkflowService) RegisterFlow(name string, fn TaskFunc, deps []string) 
 // validateTaskFunc checks if the function matches the expected signature
 func validateTaskFunc(fn TaskFunc) error {
 	fnType := reflect.TypeOf(fn)
-	if fnType == nil || fnType.Kind() != reflect.Func {
+	if fn == nil || fnType.Kind() != reflect.Func {
 		return errors.New("must be a function")
 	}
 	// Ensure 2 returns: first is any type (TaskResult), second is error
@@ -117,9 +152,12 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 		return nil, fmt.Errorf("workflow %d not found: %v", workflowID, err)
 	}
 
+	s.mu.RLock()
 	if _, ok := s.flows[flowName]; !ok {
+		s.mu.RUnlock()
 		return nil, fmt.Errorf("flow '%s' is not registered!", flowName)
 	}
+	s.mu.RUnlock()
 
 	// Set workflow to RUNNING
 	if err := txStore.UpdateWorkflowStatus(workflowID, models.RunningWorkflowStatus); err != nil {
@@ -135,109 +173,47 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 		}
 		return nil, err
 	}
-	// Initialize results map for this workflow
+	// // Initialize results map for this workflow
+	s.mu.Lock()
 	if _, ok := s.results[workflowID]; !ok {
 		s.results[workflowID] = make(map[string]TaskResult)
 	}
+	s.mu.Unlock()
 
-	// Execute tasks and flows in order
-	for _, name := range order {
-		var fn TaskFunc
-		var isTask bool
-		if f, ok := s.tasks[name]; ok {
-			fn = f
-			isTask = true
-		} else if f, ok := s.flows[name]; ok {
-			fn = f
-			isTask = false
-		} else {
-			continue // Shouldn't happen due to topological sort
-		}
+	// // Execute tasks and flows using WorkerPool
+	execID := fmt.Sprintf("exec-%d-%s", workflowID, flowName)
+	results, errs := s.wp.ExecuteTasks(execID, WorkflowContext{WorkflowID: workflowID, Results: s.results[workflowID], ResultsLock: &sync.RWMutex{}}, order)
 
-		deps := s.taskDeps[name]
-		if !isTask {
-			deps = s.flowDeps[name]
-		}
+	// store results
+	s.mu.Lock()
+	for taskID, result := range results {
+		s.results[workflowID][taskID] = result
+	}
+	s.mu.Unlock()
 
-		// Prepare arguments from dependencies
-		args := make([]reflect.Value, len(deps))
-		for i, dep := range deps {
-			if result, ok := s.results[workflowID][dep]; ok {
-				args[i] = reflect.ValueOf(result)
-			} else {
-				err = fmt.Errorf("missing result for dependency '%s' of '%s'", dep, name)
-				errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus)
-				if errU != nil {
-					return nil, errors.Wrap(errU, fmt.Sprintf("failed to update workflow status after dependency error: %v", err))
-				}
-				return nil, err
-			}
+	if len(errs) > 0 {
+		if errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus); errU != nil {
+			return nil, errors.Wrap(errU, "failed to update workflow status after errors")
 		}
-
-		// Persist task state
-		if isTask {
-			now := time.Now()
-			task := models.Task{
-				ID:         name,
-				WorkflowID: workflowID,
-				Name:       name,
-				Status:     "RUNNING",
-				StartedAt:  &now,
-			}
-			if err := txStore.SaveTask(task); err != nil {
-				errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus)
-				if errU != nil {
-					return nil, errors.Wrap(errU, fmt.Sprintf("failed to update workflow status after dependency error: %v", err))
-				}
-				return nil, fmt.Errorf("failed to save task '%s': %v", name, err)
-			}
-		}
-
-		// Execute the task or flow
-		results := reflect.ValueOf(fn).Call(args)
-		result, errVal := results[0].Interface(), results[1].Interface()
-		if errVal != nil {
-			err, ok := errVal.(error)
-			if !ok {
-				return nil, fmt.Errorf("expected error type but got %T", errVal)
-			}
-			if isTask {
-				errU := txStore.UpdateTaskStatus(name, workflowID, "FAILED", err.Error())
-				if errU != nil {
-					return nil, errors.Wrap(errU, fmt.Sprintf("failed to update task status after execution flow error: %v", err))
-				}
-			}
-			errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus)
-			if errU != nil {
-				return nil, errors.Wrap(errU, fmt.Sprintf("failed to update worfklow status after execution flow error: %v", err))
-			}
-			return nil, fmt.Errorf("execution of '%s' failed: %v", name, err)
-		}
-
-		// Store result and update task status
-		s.results[workflowID][name] = result
-		if isTask {
-			if err := txStore.UpdateTaskStatus(name, workflowID, "COMPLETED", ""); err != nil {
-				errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus)
-				if errU != nil {
-					return nil, errors.Wrap(errU, fmt.Sprintf("failed to update workflow status after failing to update task status with error: %v", err))
-				}
-				return nil, fmt.Errorf("failed to update task '%s' status: %v", name, err)
-			}
-		}
+		return nil, fmt.Errorf("execution of flow '%s' failed: %v", flowName, errs)
 	}
 
-	// Mark workflow as completed
+	// // Mark workflow as completed
 	if err := txStore.UpdateWorkflowStatus(workflowID, models.CompletedWorkflowStatus); err != nil {
 		return nil, fmt.Errorf("failed to set workflow %d to COMPLETED: %v", workflowID, err)
 	}
 
-	finalResult, ok := s.results[workflowID][flowName]
+	// // Return result
+	s.mu.RLock()
+	result, ok := s.results[workflowID][flowName]
+	s.mu.RUnlock()
+
 	if !ok {
 		return nil, fmt.Errorf("no result for flow '%s'", flowName)
 	}
 	s.logger.Infof("Executed flow '%s' for workflow %d", flowName, workflowID)
-	return finalResult, nil
+	return result, nil
+	// return nil, nil
 }
 
 // topologicalSort computes the execution order for a flow
@@ -247,6 +223,7 @@ func (s *WorkflowService) topologicalSort(flowName string) ([]string, error) {
 	allNodes := make(map[string]struct{})
 
 	// build graph
+	s.mu.RLock()
 	for name, deps := range s.taskDeps {
 		graph[name] = deps
 		allNodes[name] = struct{}{}
@@ -257,6 +234,7 @@ func (s *WorkflowService) topologicalSort(flowName string) ([]string, error) {
 		allNodes[name] = struct{}{}
 		inDegree[name] = 0
 	}
+	s.mu.RUnlock()
 
 	// Calculate in-degrees
 	for node, deps := range graph {
@@ -336,7 +314,7 @@ func (s *WorkflowService) CreateWorkflow(name string) (id int64, err error) {
 		}
 		if commitErr := txStore.Commit(); commitErr != nil {
 			s.logger.Errorf("Failed to commit: %v", commitErr)
-			err = commitErr // Update the named return value
+			err = commitErr
 		}
 	}()
 

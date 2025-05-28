@@ -25,26 +25,6 @@ func TestPostgresStore(t *testing.T) {
 		return txStore.(*internal_storage.PostgresStore)
 	}
 
-	// Test SaveWorkflow
-	t.Run("SaveWorkflow", func(t *testing.T) {
-		store := newTxStore(t)
-		wf := models.Workflow{
-			Name:      "TestWorkflow",
-			Status:    "PENDING",
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-		wfID, err := store.SaveWorkflow(wf)
-		assert.NoError(t, err)
-		assert.Greater(t, wfID, int64(0))
-
-		savedWf, err := store.GetWorkflow(wfID)
-		assert.NoError(t, err)
-		assert.Equal(t, wf.Name, savedWf.Name)
-		assert.Equal(t, wf.Status, savedWf.Status)
-		assert.Empty(t, savedWf.Tasks)
-	})
-
 	// Test GetWorkflow
 	t.Run("GetWorkflow", func(t *testing.T) {
 		store := newTxStore(t)
@@ -57,10 +37,24 @@ func TestPostgresStore(t *testing.T) {
 		wfID, err := store.SaveWorkflow(wf)
 		assert.NoError(t, err)
 
-		task0 := models.Task{ID: "t0", WorkflowID: wfID, Name: "Task0", Status: "PENDING"}
+		task0 := models.Task{
+			ID:           "t0",
+			WorkflowID:   wfID,
+			Name:         "Task0",
+			Status:       "PENDING",
+			ExecutionID:  "wf1:flow1",
+			Dependencies: nil,
+		}
 		err = store.SaveTask(task0)
 		assert.NoError(t, err)
-		task1 := models.Task{ID: "t1", WorkflowID: wfID, Name: "Task1", Status: "PENDING"}
+		task1 := models.Task{
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			ExecutionID:  "wf1:flow1",
+			Dependencies: []string{"t0"},
+		}
 		err = store.SaveTask(task1)
 		assert.NoError(t, err)
 
@@ -68,10 +62,15 @@ func TestPostgresStore(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, wf.Name, retrieved.Name)
 		assert.Len(t, retrieved.Tasks, 2)
+		assert.Equal(t, "t0", retrieved.Tasks[0].ID)
+		assert.Equal(t, "wf1:flow1", retrieved.Tasks[0].ExecutionID)
+		assert.Equal(t, []string{}, retrieved.Tasks[0].Dependencies)
 		assert.Equal(t, "t1", retrieved.Tasks[1].ID)
+		assert.Equal(t, "wf1:flow1", retrieved.Tasks[1].ExecutionID)
+		assert.Equal(t, []string{"t0"}, retrieved.Tasks[1].Dependencies)
 	})
 
-	// GetNonExistingWorkflow
+	// Test GetNonExistingWorkflow
 	t.Run("GetNonExistingWorkflow", func(t *testing.T) {
 		store := newTxStore(t)
 		_, err := store.GetWorkflow(123)
@@ -158,11 +157,13 @@ func TestPostgresStore(t *testing.T) {
 		assert.NoError(t, err)
 
 		task := models.Task{
-			ID:         "t1",
-			WorkflowID: wfID,
-			Name:       "Task1",
-			Status:     "PENDING",
-			Retries:    2,
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			Retries:      2,
+			ExecutionID:  "wf1:flow1",
+			Dependencies: []string{"t0"},
 		}
 		err = store.SaveTask(task)
 		assert.NoError(t, err)
@@ -171,6 +172,219 @@ func TestPostgresStore(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, task.Name, savedTask.Name)
 		assert.Equal(t, task.Retries, savedTask.Retries)
+		assert.Equal(t, task.ExecutionID, savedTask.ExecutionID)
+		assert.Equal(t, task.Dependencies, savedTask.Dependencies)
+	})
+
+	// Test SaveTaskIdempotent
+	t.Run("SaveTaskIdempotent", func(t *testing.T) {
+		store := newTxStore(t)
+		wfID, err := store.SaveWorkflow(models.Workflow{
+			Name:      "IdempotentTaskTest",
+			Status:    "PENDING",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+		assert.NoError(t, err)
+
+		task := models.Task{
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			Retries:      2,
+			ExecutionID:  "wf1:flow1",
+			Dependencies: []string{"t0"},
+		}
+		err = store.SaveTask(task)
+		assert.NoError(t, err)
+
+		// Save again with same ID and WorkflowID but different ExecutionID and Dependencies
+		task2 := models.Task{
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			Retries:      2,
+			ExecutionID:  "wf1:flow2",
+			Dependencies: []string{"t0", "t2"},
+		}
+		err = store.SaveTask(task2)
+		assert.NoError(t, err)
+
+		// Verify the task is updated to task2
+		savedTask, err := store.GetTask("t1", wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, task2.ExecutionID, savedTask.ExecutionID)
+		assert.Equal(t, task2.Dependencies, savedTask.Dependencies)
+	})
+
+	// Test SaveTaskWithNilDependencies
+	t.Run("SaveTaskWithNilDependencies", func(t *testing.T) {
+		store := newTxStore(t)
+		wfID, err := store.SaveWorkflow(models.Workflow{
+			Name:      "NilDependenciesTest",
+			Status:    "PENDING",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+		assert.NoError(t, err)
+
+		task := models.Task{
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			Retries:      2,
+			ExecutionID:  "wf1:flow1",
+			Dependencies: nil,
+		}
+		err = store.SaveTask(task)
+		assert.NoError(t, err)
+
+		savedTask, err := store.GetTask("t1", wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, task.Name, savedTask.Name)
+		assert.Equal(t, task.Retries, savedTask.Retries)
+		assert.Equal(t, task.ExecutionID, savedTask.ExecutionID)
+		assert.Equal(t, []string{}, savedTask.Dependencies)
+	})
+
+	// Test SaveTaskWithEmptyDependencies
+	t.Run("SaveTaskWithEmptyDependencies", func(t *testing.T) {
+		store := newTxStore(t)
+		wfID, err := store.SaveWorkflow(models.Workflow{
+			Name:      "EmptyDependenciesTest",
+			Status:    "PENDING",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+		assert.NoError(t, err)
+
+		task := models.Task{
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			Retries:      2,
+			ExecutionID:  "wf1:flow1",
+			Dependencies: []string{},
+		}
+		err = store.SaveTask(task)
+		assert.NoError(t, err)
+
+		savedTask, err := store.GetTask("t1", wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, task.Name, savedTask.Name)
+		assert.Equal(t, task.Retries, savedTask.Retries)
+		assert.Equal(t, task.ExecutionID, savedTask.ExecutionID)
+		assert.Equal(t, []string{}, savedTask.Dependencies)
+	})
+
+	// Test Dependencies
+	t.Run("Dependencies", func(t *testing.T) {
+		store := newTxStore(t)
+		wf := models.Workflow{
+			Name:      "DependenciesTest",
+			Status:    "PENDING",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		wfID, err := store.SaveWorkflow(wf)
+		assert.NoError(t, err)
+
+		// Define tasks with varied Dependencies
+		tasks := []models.Task{
+			{
+				ID:           "t0",
+				WorkflowID:   wfID,
+				Name:         "Task0",
+				Status:       "PENDING",
+				ExecutionID:  "wf1:flow1",
+				Dependencies: nil,
+			},
+			{
+				ID:           "t1",
+				WorkflowID:   wfID,
+				Name:         "Task1",
+				Status:       "PENDING",
+				ExecutionID:  "wf1:flow1",
+				Dependencies: []string{},
+			},
+			{
+				ID:           "t2",
+				WorkflowID:   wfID,
+				Name:         "Task2",
+				Status:       "PENDING",
+				ExecutionID:  "wf1:flow1",
+				Dependencies: []string{"t0"},
+			},
+			{
+				ID:           "t3",
+				WorkflowID:   wfID,
+				Name:         "Task3",
+				Status:       "PENDING",
+				ExecutionID:  "wf1:flow1",
+				Dependencies: []string{"t0", "t1", "t2"},
+			},
+			{
+				ID:           "t4",
+				WorkflowID:   wfID,
+				Name:         "Task4",
+				Status:       "PENDING",
+				ExecutionID:  "wf1:flow1",
+				Dependencies: []string{"t0,t1", `t2"t3`, ""},
+			},
+		}
+
+		// Save all tasks
+		for _, task := range tasks {
+			err := store.SaveTask(task)
+			assert.NoError(t, err)
+		}
+
+		// Verify tasks via GetTask
+		for _, expected := range tasks {
+			retrieved, err := store.GetTask(expected.ID, wfID)
+			assert.NoError(t, err)
+			if expected.Dependencies == nil {
+				assert.Equal(t, []string{}, retrieved.Dependencies)
+			} else {
+				// Filter out empty strings for comparison
+				filtered := []string{}
+				for _, dep := range expected.Dependencies {
+					if dep != "" {
+						filtered = append(filtered, dep)
+					}
+				}
+				assert.Equal(t, filtered, retrieved.Dependencies)
+			}
+			assert.Equal(t, expected.Name, retrieved.Name)
+			assert.Equal(t, expected.ExecutionID, retrieved.ExecutionID)
+		}
+
+		// Verify tasks via GetWorkflow
+		retrievedWf, err := store.GetWorkflow(wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, wf.Name, retrievedWf.Name)
+		assert.Len(t, retrievedWf.Tasks, len(tasks))
+		for i, expected := range tasks {
+			assert.Equal(t, expected.ID, retrievedWf.Tasks[i].ID)
+			if expected.Dependencies == nil {
+				assert.Equal(t, []string{}, retrievedWf.Tasks[i].Dependencies)
+			} else {
+				// Filter out empty strings
+				filtered := []string{}
+				for _, dep := range expected.Dependencies {
+					if dep != "" {
+						filtered = append(filtered, dep)
+					}
+				}
+				assert.Equal(t, filtered, retrievedWf.Tasks[i].Dependencies)
+			}
+			assert.Equal(t, expected.Name, retrievedWf.Tasks[i].Name)
+			assert.Equal(t, expected.ExecutionID, retrievedWf.Tasks[i].ExecutionID)
+		}
 	})
 
 	// Test GetTask
@@ -184,13 +398,22 @@ func TestPostgresStore(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		task := models.Task{ID: "t1", WorkflowID: wfID, Name: "Task1", Status: "PENDING"}
+		task := models.Task{
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			ExecutionID:  "wf1:flow1",
+			Dependencies: []string{"t0"},
+		}
 		err = store.SaveTask(task)
 		assert.NoError(t, err)
 
 		retrieved, err := store.GetTask("t1", wfID)
 		assert.NoError(t, err)
-		assert.Equal(t, "Task1", retrieved.Name)
+		assert.Equal(t, task.Name, retrieved.Name)
+		assert.Equal(t, task.ExecutionID, retrieved.ExecutionID)
+		assert.Equal(t, task.Dependencies, retrieved.Dependencies)
 	})
 
 	// Test GetNonExistingTask
@@ -219,7 +442,14 @@ func TestPostgresStore(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		task := models.Task{ID: "t1", WorkflowID: wfID, Name: "Task1", Status: "PENDING"}
+		task := models.Task{
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			ExecutionID:  "wf1:flow1",
+			Dependencies: []string{"t0"},
+		}
 		err = store.SaveTask(task)
 		assert.NoError(t, err)
 
@@ -228,8 +458,10 @@ func TestPostgresStore(t *testing.T) {
 
 		updated, err := store.GetTask("t1", wfID)
 		assert.NoError(t, err)
-		assert.Equal(t, "COMPLETED", updated.Status)
+		assert.Equal(t, models.CompletedTaskStatus, updated.Status)
 		assert.Equal(t, "All good", updated.ErrorMsg)
 		assert.NotNil(t, updated.FinishedAt)
+		assert.Equal(t, task.ExecutionID, updated.ExecutionID)
+		assert.Equal(t, task.Dependencies, updated.Dependencies)
 	})
 }

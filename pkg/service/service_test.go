@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,8 +43,8 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("UnregisteredTaskInFlow", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
 
 		// Register flow with non-existent task dependency
@@ -66,16 +67,16 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("DuplicateTaskRegistration", func(t *testing.T) {
-		svc := newWorkflowService() // or svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := newWorkflowService()
 
-		fetchTask1 := func() (service.TaskResult, error) {
+		fetchTask1 := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 1", nil
 		}
-		fetchTask2 := func() (service.TaskResult, error) {
+		fetchTask2 := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 2", nil
 		}
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			str, ok := data.(string)
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			str, ok := data[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", data)
 			}
@@ -88,7 +89,6 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 		wfID, err := svc.CreateWorkflow("testDuplicateTask")
 		assert.NoError(t, err)
-
 		result, err := svc.ExecuteFlow(wfID, "pipeline")
 		assert.NoError(t, err)
 		assert.Equal(t, "processed: raw data 2", result) // Uses fetchTask2
@@ -99,13 +99,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 1) // Single task persisted due to SaveTask logic
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
 	})
 
 	t.Run("DuplicateFlowRegistration", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
 		pipelineFlow1 := func(args ...service.TaskResult) (service.TaskResult, error) {
@@ -140,7 +140,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 1)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
 	})
 
 	t.Run("InvalidTaskDependencies", func(t *testing.T) {
@@ -176,15 +176,15 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("EmptyTaskFlowRegistration", func(t *testing.T) {
-		svc := newWorkflowService() // or service.NewWorkflowService(postgresStore(t), logger{})
+		svc := newWorkflowService()
 
-		err := svc.RegisterTask("", func() (service.TaskResult, error) {
+		err := svc.RegisterTask("", func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "empty task name")
 
-		err = svc.RegisterFlow("", func() (service.TaskResult, error) {
+		err = svc.RegisterFlow("", func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
 		assert.Error(t, err)
@@ -201,11 +201,11 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("BasicPipeline", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			str, ok := data.(string)
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			str, ok := data[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", data)
 			}
@@ -232,20 +232,20 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		// Verify tasks in DB
 		assert.Len(t, wf.Tasks, 1) // Only "fetch" task persisted
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
 	})
 
 	t.Run("MoreComplexPipeline", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		processTask := func(fetchTaskResult service.TaskResult) (service.TaskResult, error) {
-			return "processing: " + fetchTaskResult.(string), nil
+		processTask := func(args ...service.TaskResult) (service.TaskResult, error) {
+			return "processing: " + args[0].(string), nil
 		}
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
 
 		assert.NoError(t, svc.RegisterTask("fetch", fetchTask, []string{}))
@@ -270,20 +270,22 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Len(t, wf.Tasks, 2)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
 		assert.Equal(t, "process", wf.Tasks[1].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
-		assert.Equal(t, "COMPLETED", wf.Tasks[1].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[1].Status)
 	})
 
 	t.Run("MultipleDependencies", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		processTask := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		processTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
-		pipelineFlow := func(fetched, processed service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+			fetched := args[0]
+			processed := args[1]
 			return fetched.(string) + " | " + processed.(string), nil
 		}
 
@@ -308,28 +310,28 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wf.Tasks, 2)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
 		assert.Equal(t, "process", wf.Tasks[1].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[1].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[1].Status)
 	})
 
 	t.Run("MultipleFlows", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		cleanTask := func(data service.TaskResult) (service.TaskResult, error) {
-			return "cleaned: " + data.(string), nil
+		cleanTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "cleaned: " + data[0].(string), nil
 		}
-		preprocessFlow := func(cleaned service.TaskResult) (service.TaskResult, error) {
-			return cleaned, nil
+		preprocessFlow := func(cleaned ...service.TaskResult) (service.TaskResult, error) {
+			return cleaned[0], nil
 		}
-		analyzeTask := func(data service.TaskResult) (service.TaskResult, error) {
-			return "analyzed: " + data.(string), nil
+		analyzeTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "analyzed: " + data[0].(string), nil
 		}
-		reportFlow := func(analyzed service.TaskResult) (service.TaskResult, error) {
-			return "report: " + analyzed.(string), nil
+		reportFlow := func(analyzed ...service.TaskResult) (service.TaskResult, error) {
+			return "report: " + analyzed[0].(string), nil
 		}
 
 		assert.NoError(t, svc.RegisterTask("fetch", fetchTask, []string{}))
@@ -357,7 +359,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 3) // "fetch", "clean", "analyze" (fetch reused)
 		for _, task := range wf.Tasks {
-			assert.Equal(t, "COMPLETED", task.Status)
+			assert.Equal(t, models.CompletedTaskStatus, task.Status)
 		}
 		assert.Contains(t, []string{"fetch", "clean", "analyze"}, wf.Tasks[0].ID)
 		assert.Contains(t, []string{"fetch", "clean", "analyze"}, wf.Tasks[1].ID)
@@ -367,13 +369,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("FailureHandling", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}
-		failTask := func(data service.TaskResult) (service.TaskResult, error) {
+		failTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return nil, errors.New("task failed")
 		}
-		flow := func(data service.TaskResult) (service.TaskResult, error) {
+		flow := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return data, nil
 		}
 
@@ -386,7 +388,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 		_, err = svc.ExecuteFlow(wfID, "testFlow")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "execution of 'fail' failed: task failed")
+		assert.Contains(t, err.Error(), "execution of flow 'testFlow' failed")
 
 		// Verify workflow and task status
 		wf, err := svc.GetWorkflow(wfID)
@@ -395,10 +397,10 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Len(t, wf.Tasks, 2)
 		for _, task := range wf.Tasks {
 			if task.ID == "fetch" {
-				assert.Equal(t, "COMPLETED", task.Status)
+				assert.Equal(t, "COMPLETED", string(task.Status))
 			}
 			if task.ID == "fail" {
-				assert.Equal(t, "FAILED", task.Status)
+				assert.Equal(t, "FAILED", string(task.Status))
 				assert.Equal(t, "task failed", task.ErrorMsg)
 			}
 		}
@@ -406,11 +408,11 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 	t.Run("MultipleRuns", func(t *testing.T) {
 		svc := newWorkflowService()
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return time.Now().String(), nil // Dynamic result
 		}
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
 
 		assert.NoError(t, svc.RegisterTask("fetch", fetchTask, []string{}))
@@ -443,15 +445,59 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wf1.Tasks, 1)
 		assert.Equal(t, "fetch", wf1.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf1.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf1.Tasks[0].Status))
 
 		wf2, err := svc.GetWorkflow(wfID2)
 		assert.NoError(t, err)
 		assert.Len(t, wf2.Tasks, 1)
 		assert.Equal(t, "fetch", wf2.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf2.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf2.Tasks[0].Status))
+	})
+
+	t.Run("ParallelTaskExecution", func(t *testing.T) {
+		svc := newWorkflowService()
+		task1 := func(data ...service.TaskResult) (service.TaskResult, error) {
+			time.Sleep(100 * time.Millisecond)
+			return "result1", nil
+		}
+		task2 := func(data ...service.TaskResult) (service.TaskResult, error) {
+			time.Sleep(100 * time.Millisecond)
+			return "result2", nil
+		}
+
+		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+			result := make([]string, 0, len(args))
+			for i := 0; i < len(args); i++ {
+				result = append(result, args[i].(string))
+			}
+			return strings.Join(result, " | "), nil
+		}
+		assert.NoError(t, svc.RegisterTask("task1", task1, []string{}))
+		assert.NoError(t, svc.RegisterTask("task2", task2, []string{}))
+		assert.NoError(t, svc.RegisterFlow("parallelPipeline", pipelineFlow, []string{"task1", "task2"}))
+		wfID, err := svc.CreateWorkflow("parallelTest")
+		assert.NoError(t, err)
+		start := time.Now()
+		result, err := svc.ExecuteFlow(wfID, "parallelPipeline")
+		duration := time.Since(start)
+		assert.NoError(t, err)
+		assert.Equal(t, "result1 | result2", result)
+		// assert less then 150 miliseconds which proves the asynchronius way
+		assert.Less(t, duration, 150*time.Millisecond)
+		wf, err := svc.GetWorkflow(wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
+		assert.Len(t, wf.Tasks, 2)
+		taskIDs := make(map[string]bool)
+		for _, task := range wf.Tasks {
+			taskIDs[task.ID] = true
+			assert.Equal(t, models.CompletedTaskStatus, task.Status)
+		}
+		assert.True(t, taskIDs["task1"])
+		assert.True(t, taskIDs["task2"])
 	})
 }
+
 func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	testDB := testutil.SetupTestDB(t)
 	defer testDB.Teardown(t)
@@ -479,8 +525,8 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("UnregisteredTaskInFlow", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
 
 		// Register flow with non-existent task dependency
@@ -505,14 +551,14 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("DuplicateTaskRegistration", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		fetchTask1 := func() (service.TaskResult, error) {
+		fetchTask1 := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 1", nil
 		}
-		fetchTask2 := func() (service.TaskResult, error) {
+		fetchTask2 := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 2", nil
 		}
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			str, ok := data.(string)
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			str, ok := data[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", data)
 			}
@@ -536,13 +582,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 1) // Single task persisted due to SaveTask logic
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 	})
 
 	t.Run("DuplicateFlowRegistration", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
 		pipelineFlow1 := func(args ...service.TaskResult) (service.TaskResult, error) {
@@ -577,7 +623,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 1)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 	})
 
 	t.Run("InvalidTaskDependencies", func(t *testing.T) {
@@ -615,13 +661,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("EmptyTaskFlowRegistration", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		err := svc.RegisterTask("", func() (service.TaskResult, error) {
+		err := svc.RegisterTask("", func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "empty task name")
 
-		err = svc.RegisterFlow("", func() (service.TaskResult, error) {
+		err = svc.RegisterFlow("", func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
 		assert.Error(t, err)
@@ -639,11 +685,11 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("BasicPipeline", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
 
 		assert.NoError(t, svc.RegisterTask("fetch", fetchTask, []string{}))
@@ -666,20 +712,20 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		// Verify tasks in DB
 		assert.Len(t, wf.Tasks, 1) // Only "fetch" task persisted
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 	})
 
 	t.Run("MoreComplexPipeline", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		processTask := func(fetchTaskResult service.TaskResult) (service.TaskResult, error) {
-			return "processing: " + fetchTaskResult.(string), nil
+		processTask := func(args ...service.TaskResult) (service.TaskResult, error) {
+			return "processing: " + args[0].(string), nil
 		}
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
 
 		assert.NoError(t, svc.RegisterTask("fetch", fetchTask, []string{}))
@@ -704,19 +750,21 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Len(t, wf.Tasks, 2)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
 		assert.Equal(t, "process", wf.Tasks[1].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
-		assert.Equal(t, "COMPLETED", wf.Tasks[1].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[1].Status))
 	})
 
 	t.Run("MultipleDependencies", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		processTask := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		processTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
-		pipelineFlow := func(fetched, processed service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+			fetched := args[0]
+			processed := args[1]
 			return fetched.(string) + " | " + processed.(string), nil
 		}
 
@@ -741,27 +789,27 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wf.Tasks, 2)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 		assert.Equal(t, "process", wf.Tasks[1].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[1].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[1].Status))
 	})
 
 	t.Run("MultipleFlows", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		cleanTask := func(data service.TaskResult) (service.TaskResult, error) {
-			return "cleaned: " + data.(string), nil
+		cleanTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "cleaned: " + data[0].(string), nil
 		}
-		preprocessFlow := func(cleaned service.TaskResult) (service.TaskResult, error) {
-			return cleaned, nil
+		preprocessFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return data[0], nil
 		}
-		analyzeTask := func(data service.TaskResult) (service.TaskResult, error) {
-			return "analyzed: " + data.(string), nil
+		analyzeTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "analyzed: " + data[0].(string), nil
 		}
-		reportFlow := func(analyzed service.TaskResult) (service.TaskResult, error) {
-			return "report: " + analyzed.(string), nil
+		reportFlow := func(analyzed ...service.TaskResult) (service.TaskResult, error) {
+			return "report: " + analyzed[0].(string), nil
 		}
 
 		assert.NoError(t, svc.RegisterTask("fetch", fetchTask, []string{}))
@@ -790,7 +838,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Len(t, wf.Tasks, 3)
 		taskIDs := make(map[string]bool)
 		for _, task := range wf.Tasks {
-			assert.Equal(t, "COMPLETED", task.Status)
+			assert.Equal(t, "COMPLETED", string(task.Status))
 			taskIDs[task.ID] = true
 		}
 		assert.Len(t, taskIDs, 3, "Expected exactly 3 unique tasks")
@@ -801,13 +849,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 	t.Run("FailureHandling", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}
-		failTask := func(data service.TaskResult) (service.TaskResult, error) {
+		failTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return nil, errors.New("task failed")
 		}
-		flow := func(data service.TaskResult) (service.TaskResult, error) {
+		flow := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return data, nil
 		}
 
@@ -820,7 +868,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 		_, err = svc.ExecuteFlow(wfID, "testFlow")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "execution of 'fail' failed: task failed")
+		assert.Contains(t, err.Error(), "execution of flow 'testFlow' failed")
 
 		// Verify workflow and task status
 		wf, err := svc.GetWorkflow(wfID)
@@ -829,10 +877,10 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Len(t, wf.Tasks, 2)
 		for _, task := range wf.Tasks {
 			if task.ID == "fetch" {
-				assert.Equal(t, "COMPLETED", task.Status)
+				assert.Equal(t, "COMPLETED", string(task.Status))
 			}
 			if task.ID == "fail" {
-				assert.Equal(t, "FAILED", task.Status)
+				assert.Equal(t, "FAILED", string(task.Status))
 				assert.Equal(t, "task failed", task.ErrorMsg)
 			}
 		}
@@ -840,11 +888,11 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 	t.Run("MultipleRuns", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		fetchTask := func() (service.TaskResult, error) {
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
 			return time.Now().String(), nil // Dynamic result
 		}
-		pipelineFlow := func(data service.TaskResult) (service.TaskResult, error) {
-			return "processed: " + data.(string), nil
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
 		}
 
 		assert.NoError(t, svc.RegisterTask("fetch", fetchTask, []string{}))
@@ -877,13 +925,56 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wf1.Tasks, 1)
 		assert.Equal(t, "fetch", wf1.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf1.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf1.Tasks[0].Status))
 
 		wf2, err := svc.GetWorkflow(wfID2)
 		assert.NoError(t, err)
 		assert.Len(t, wf2.Tasks, 1)
 		assert.Equal(t, "fetch", wf2.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf2.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf2.Tasks[0].Status))
+	})
+
+	t.Run("ParallelTaskExecution", func(t *testing.T) {
+		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		task1 := func(data ...service.TaskResult) (service.TaskResult, error) {
+			time.Sleep(100 * time.Millisecond)
+			return "result1", nil
+		}
+		task2 := func(data ...service.TaskResult) (service.TaskResult, error) {
+			time.Sleep(100 * time.Millisecond)
+			return "result2", nil
+		}
+
+		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+			result := make([]string, 0, len(args))
+			for i := 0; i < len(args); i++ {
+				result = append(result, args[i].(string))
+			}
+			return strings.Join(result, " | "), nil
+		}
+		assert.NoError(t, svc.RegisterTask("task1", task1, []string{}))
+		assert.NoError(t, svc.RegisterTask("task2", task2, []string{}))
+		assert.NoError(t, svc.RegisterFlow("parallelPipeline", pipelineFlow, []string{"task1", "task2"}))
+		wfID, err := svc.CreateWorkflow("parallelTest")
+		assert.NoError(t, err)
+		start := time.Now()
+		result, err := svc.ExecuteFlow(wfID, "parallelPipeline")
+		duration := time.Since(start)
+		assert.NoError(t, err)
+		assert.Equal(t, "result1 | result2", result)
+		// assert less then 150 miliseconds which proves the asynchronius way
+		assert.Less(t, duration, 150*time.Millisecond)
+		wf, err := svc.GetWorkflow(wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
+		assert.Len(t, wf.Tasks, 2)
+		taskIDs := make(map[string]bool)
+		for _, task := range wf.Tasks {
+			taskIDs[task.ID] = true
+			assert.Equal(t, models.CompletedTaskStatus, task.Status)
+		}
+		assert.True(t, taskIDs["task1"])
+		assert.True(t, taskIDs["task2"])
 	})
 
 }

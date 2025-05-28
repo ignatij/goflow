@@ -36,7 +36,7 @@ func TestE2EServer(t *testing.T) {
 	newServerWithFlow := func(store storage.Store) *httptest.Server {
 		svc := service.NewWorkflowService(store, log.GetLogger())
 		// Register a test task and flow
-		_ = svc.RegisterTask("fetch", func() (service.TaskResult, error) {
+		_ = svc.RegisterTask("fetch", func(args ...service.TaskResult) (service.TaskResult, error) {
 			return "fetch_result", nil
 		}, nil)
 		_ = svc.RegisterFlow("process", func(args ...service.TaskResult) (service.TaskResult, error) {
