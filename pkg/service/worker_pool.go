@@ -295,7 +295,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 				return
 			}
 
-			task.Status = "COMPLETED"
+			task.Status = models.CompletedTaskStatus
 			finishedAt := time.Now()
 			task.FinishedAt = &finishedAt
 			if saveErr := wp.taskService.SaveTask(task); saveErr != nil {
