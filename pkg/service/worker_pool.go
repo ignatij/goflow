@@ -13,10 +13,7 @@ import (
 
 // executionState holds state for a single execution (workflow + flow)
 type executionState struct {
-	taskStatus map[string]string
-	// taskResults  map[string]TaskResult
 	taskErrors   map[string]error
-	taskCount    int           // Total tasks in execution
 	pendingCount int           // Tasks not yet completed or failed
 	completeChan chan struct{} // Signals completion or error
 	mu           sync.RWMutex
@@ -99,10 +96,7 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 		return nil, map[string]error{"execId": fmt.Errorf("execution %s already running", execID)}
 	}
 	state := &executionState{
-		taskStatus: make(map[string]string),
-		// taskResults:  make(map[string]TaskResult),
 		taskErrors:   make(map[string]error),
-		taskCount:    len(taskIDs),
 		pendingCount: len(taskIDs),
 		completeChan: make(chan struct{}),
 		mu:           sync.RWMutex{},
@@ -142,10 +136,6 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 				return nil, map[string]error{taskID: err}
 			}
 		}
-
-		state.mu.Lock()
-		state.taskStatus[taskID] = "PENDING"
-		state.mu.Unlock()
 
 		// Queue task
 		select {
@@ -204,7 +194,7 @@ func (wp *WorkerPool) canRunTask(task models.Task) (bool, error) {
 func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 	// check if task can run
 	task := *taskCtx.Task
-	ctx := taskCtx.Ctx
+	ctx := *taskCtx.Ctx
 	canRun, err := wp.canRunTask(*taskCtx.Task)
 	if err != nil {
 		wp.markTaskFailed(*taskCtx.Task, err)
@@ -260,7 +250,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 	wp.mu.RUnlock()
 	// Execute task with retries
 	if isTask {
-		if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "RUNNING", ""); updateErr != nil {
+		if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.RunningTaskStatus, ""); updateErr != nil {
 			wp.logger.Errorf("Failed to update task %s status to RUNNING: %v", task.ID, updateErr)
 			return
 		}
@@ -287,7 +277,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		task.ErrorMsg = taskErr.Error()
 		state.taskErrors[task.ID] = taskErr
 		if isTask {
-			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "FAILED", taskErr.Error()); updateErr != nil {
+			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.FailedTaskStatus, taskErr.Error()); updateErr != nil {
 				wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
 				return
 			}
@@ -299,7 +289,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		ctx.ResultsLock.Unlock()
 
 		if isTask {
-			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "COMPLETED", ""); updateErr != nil {
+			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.CompletedTaskStatus, ""); updateErr != nil {
 				wp.logger.Errorf("Failed to update task %s status to COMPLETED: %v", task.ID, updateErr)
 				return
 			}
@@ -338,11 +328,8 @@ func (wp *WorkerPool) markTaskFailed(task models.Task, err error) {
 	wp.mu.RUnlock()
 
 	state.mu.Lock()
-	state.taskStatus[task.ID] = "FAILED"
 	state.taskErrors[task.ID] = err
 	state.mu.Unlock()
-
-	task.ErrorMsg = err.Error()
 
 	if isTask {
 		if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "FAILED", err.Error()); updateErr != nil {

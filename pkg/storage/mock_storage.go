@@ -117,14 +117,14 @@ func (m *mockStore) GetTask(id string, workflowID int64) (models.Task, error) {
 }
 
 // UpdateTaskStatus updates a task's status and error message
-func (m *mockStore) UpdateTaskStatus(id string, workflowID int64, status, errorMsg string) error {
+func (m *mockStore) UpdateTaskStatus(id string, workflowID int64, status models.TaskStatus, errorMsg string) error {
 	m.mu.Lock()
 	tasks := m.tasks[workflowID]
 	for i, t := range tasks {
 		if t.ID == id && t.WorkflowID == workflowID {
 			t.Status = status
 			t.ErrorMsg = errorMsg
-			if status == "COMPLETED" || status == "FAILED" {
+			if status == models.CompletedTaskStatus || status == models.FailedTaskStatus {
 				now := time.Now()
 				t.FinishedAt = &now
 			}

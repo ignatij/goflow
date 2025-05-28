@@ -99,7 +99,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 1) // Single task persisted due to SaveTask logic
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
 	})
 
 	t.Run("DuplicateFlowRegistration", func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 1)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
 	})
 
 	t.Run("InvalidTaskDependencies", func(t *testing.T) {
@@ -232,7 +232,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		// Verify tasks in DB
 		assert.Len(t, wf.Tasks, 1) // Only "fetch" task persisted
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
 	})
 
 	t.Run("MoreComplexPipeline", func(t *testing.T) {
@@ -270,8 +270,8 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Len(t, wf.Tasks, 2)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
 		assert.Equal(t, "process", wf.Tasks[1].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
-		assert.Equal(t, "COMPLETED", wf.Tasks[1].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[1].Status)
 	})
 
 	t.Run("MultipleDependencies", func(t *testing.T) {
@@ -310,9 +310,9 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wf.Tasks, 2)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[0].Status)
 		assert.Equal(t, "process", wf.Tasks[1].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[1].Status)
+		assert.Equal(t, models.CompletedTaskStatus, wf.Tasks[1].Status)
 	})
 
 	t.Run("MultipleFlows", func(t *testing.T) {
@@ -359,7 +359,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 3) // "fetch", "clean", "analyze" (fetch reused)
 		for _, task := range wf.Tasks {
-			assert.Equal(t, "COMPLETED", task.Status)
+			assert.Equal(t, models.CompletedTaskStatus, task.Status)
 		}
 		assert.Contains(t, []string{"fetch", "clean", "analyze"}, wf.Tasks[0].ID)
 		assert.Contains(t, []string{"fetch", "clean", "analyze"}, wf.Tasks[1].ID)
@@ -397,10 +397,10 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.Len(t, wf.Tasks, 2)
 		for _, task := range wf.Tasks {
 			if task.ID == "fetch" {
-				assert.Equal(t, "COMPLETED", task.Status)
+				assert.Equal(t, "COMPLETED", string(task.Status))
 			}
 			if task.ID == "fail" {
-				assert.Equal(t, "FAILED", task.Status)
+				assert.Equal(t, "FAILED", string(task.Status))
 				assert.Equal(t, "task failed", task.ErrorMsg)
 			}
 		}
@@ -445,13 +445,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wf1.Tasks, 1)
 		assert.Equal(t, "fetch", wf1.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf1.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf1.Tasks[0].Status))
 
 		wf2, err := svc.GetWorkflow(wfID2)
 		assert.NoError(t, err)
 		assert.Len(t, wf2.Tasks, 1)
 		assert.Equal(t, "fetch", wf2.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf2.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf2.Tasks[0].Status))
 	})
 
 	t.Run("ParallelTaskExecution", func(t *testing.T) {
@@ -584,7 +584,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 1) // Single task persisted due to SaveTask logic
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 	})
 
 	t.Run("DuplicateFlowRegistration", func(t *testing.T) {
@@ -625,7 +625,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
 		assert.Len(t, wf.Tasks, 1)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 	})
 
 	t.Run("InvalidTaskDependencies", func(t *testing.T) {
@@ -714,7 +714,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		// Verify tasks in DB
 		assert.Len(t, wf.Tasks, 1) // Only "fetch" task persisted
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 	})
 
 	t.Run("MoreComplexPipeline", func(t *testing.T) {
@@ -752,8 +752,8 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Len(t, wf.Tasks, 2)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
 		assert.Equal(t, "process", wf.Tasks[1].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
-		assert.Equal(t, "COMPLETED", wf.Tasks[1].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[1].Status))
 	})
 
 	t.Run("MultipleDependencies", func(t *testing.T) {
@@ -791,9 +791,9 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wf.Tasks, 2)
 		assert.Equal(t, "fetch", wf.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 		assert.Equal(t, "process", wf.Tasks[1].ID)
-		assert.Equal(t, "COMPLETED", wf.Tasks[1].Status)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[1].Status))
 	})
 
 	t.Run("MultipleFlows", func(t *testing.T) {
@@ -840,7 +840,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Len(t, wf.Tasks, 3)
 		taskIDs := make(map[string]bool)
 		for _, task := range wf.Tasks {
-			assert.Equal(t, "COMPLETED", task.Status)
+			assert.Equal(t, "COMPLETED", string(task.Status))
 			taskIDs[task.ID] = true
 		}
 		assert.Len(t, taskIDs, 3, "Expected exactly 3 unique tasks")
@@ -879,10 +879,10 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Len(t, wf.Tasks, 2)
 		for _, task := range wf.Tasks {
 			if task.ID == "fetch" {
-				assert.Equal(t, "COMPLETED", task.Status)
+				assert.Equal(t, "COMPLETED", string(task.Status))
 			}
 			if task.ID == "fail" {
-				assert.Equal(t, "FAILED", task.Status)
+				assert.Equal(t, "FAILED", string(task.Status))
 				assert.Equal(t, "task failed", task.ErrorMsg)
 			}
 		}
@@ -927,13 +927,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, wf1.Tasks, 1)
 		assert.Equal(t, "fetch", wf1.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf1.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf1.Tasks[0].Status))
 
 		wf2, err := svc.GetWorkflow(wfID2)
 		assert.NoError(t, err)
 		assert.Len(t, wf2.Tasks, 1)
 		assert.Equal(t, "fetch", wf2.Tasks[0].ID)
-		assert.Equal(t, "COMPLETED", wf2.Tasks[0].Status)
+		assert.Equal(t, "COMPLETED", string(wf2.Tasks[0].Status))
 	})
 
 }

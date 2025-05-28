@@ -235,7 +235,7 @@ func (s *PostgresStore) GetTask(id string, workflowID int64) (models.Task, error
 }
 
 // UpdateTaskStatus updates a task's status and error message
-func (s *PostgresStore) UpdateTaskStatus(id string, workflowID int64, status, errorMsg string) error {
+func (s *PostgresStore) UpdateTaskStatus(id string, workflowID int64, status models.TaskStatus, errorMsg string) error {
 	_, err := s.db.Exec(`
 		UPDATE tasks 
 		SET status = $1, 

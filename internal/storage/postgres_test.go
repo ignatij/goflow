@@ -458,7 +458,7 @@ func TestPostgresStore(t *testing.T) {
 
 		updated, err := store.GetTask("t1", wfID)
 		assert.NoError(t, err)
-		assert.Equal(t, "COMPLETED", updated.Status)
+		assert.Equal(t, models.CompletedTaskStatus, updated.Status)
 		assert.Equal(t, "All good", updated.ErrorMsg)
 		assert.NotNil(t, updated.FinishedAt)
 		assert.Equal(t, task.ExecutionID, updated.ExecutionID)

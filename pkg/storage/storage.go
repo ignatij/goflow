@@ -25,7 +25,7 @@ type Store interface {
 	// GetTask retrieves a task by its ID, returning ErrNotFound if absent.
 	GetTask(id string, workflowID int64) (models.Task, error)
 	// UpdateTaskStatus updates a task status by its ID.
-	UpdateTaskStatus(id string, workflowID int64, status, errorMsg string) error
+	UpdateTaskStatus(id string, workflowID int64, status models.TaskStatus, errorMsg string) error
 
 	// Begin starts a new transaction.
 	Begin() (Store, error)

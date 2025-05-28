@@ -60,7 +60,7 @@ func (ts *TaskService) SaveTask(task models.Task) (err error) {
 	return nil
 }
 
-func (ts *TaskService) UpdateTaskStatus(taskID string, workflowID int64, status, errMsg string) (err error) {
+func (ts *TaskService) UpdateTaskStatus(taskID string, workflowID int64, status models.TaskStatus, errMsg string) (err error) {
 	txStore, err := ts.store.Begin()
 	if err != nil {
 		ts.logger.Errorf("Failed to begin transaction for UpdateTaskStatus: %v", err)
