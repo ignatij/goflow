@@ -123,10 +123,11 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 			ID:           taskID,
 			WorkflowID:   ctx.WorkflowID,
 			Name:         taskID,
-			Status:       "PENDING",
+			Status:       models.PendingTaskStatus,
 			ExecutionID:  execID,
 			Dependencies: deps,
-			Retries:      2,
+			// TODO this should be configurable
+			Retries: 2,
 		}
 
 		if isTask {

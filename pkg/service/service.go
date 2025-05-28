@@ -80,8 +80,8 @@ func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string) 
 		combinedDeps[k] = s.flowDeps[k]
 		combinedTypes[k] = "flow"
 	}
-	s.wp.UpdateTasks(combinedTasks, combinedDeps, combinedTypes)
 	s.mu.Unlock()
+	s.wp.UpdateTasks(combinedTasks, combinedDeps, combinedTypes)
 	s.logger.Infof("Registered task '%s' with dependencies '%v'", name, deps)
 	return nil
 }
