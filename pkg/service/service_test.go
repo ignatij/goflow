@@ -455,8 +455,6 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	})
 
 	t.Run("ParallelTaskExecution", func(t *testing.T) {
-		// skip for now - we are not ready yet
-		t.Skip()
 		svc := newWorkflowService()
 		task1 := func(data ...service.TaskResult) (service.TaskResult, error) {
 			time.Sleep(100 * time.Millisecond)
@@ -493,7 +491,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		taskIDs := make(map[string]bool)
 		for _, task := range wf.Tasks {
 			taskIDs[task.ID] = true
-			assert.Equal(t, "COMPLETED", task.Status)
+			assert.Equal(t, models.CompletedTaskStatus, task.Status)
 		}
 		assert.True(t, taskIDs["task1"])
 		assert.True(t, taskIDs["task2"])
@@ -934,6 +932,49 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Len(t, wf2.Tasks, 1)
 		assert.Equal(t, "fetch", wf2.Tasks[0].ID)
 		assert.Equal(t, "COMPLETED", string(wf2.Tasks[0].Status))
+	})
+
+	t.Run("ParallelTaskExecution", func(t *testing.T) {
+		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		task1 := func(data ...service.TaskResult) (service.TaskResult, error) {
+			time.Sleep(100 * time.Millisecond)
+			return "result1", nil
+		}
+		task2 := func(data ...service.TaskResult) (service.TaskResult, error) {
+			time.Sleep(100 * time.Millisecond)
+			return "result2", nil
+		}
+
+		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+			result := make([]string, 0, len(args))
+			for i := 0; i < len(args); i++ {
+				result = append(result, args[i].(string))
+			}
+			return strings.Join(result, " | "), nil
+		}
+		assert.NoError(t, svc.RegisterTask("task1", task1, []string{}))
+		assert.NoError(t, svc.RegisterTask("task2", task2, []string{}))
+		assert.NoError(t, svc.RegisterFlow("parallelPipeline", pipelineFlow, []string{"task1", "task2"}))
+		wfID, err := svc.CreateWorkflow("parallelTest")
+		assert.NoError(t, err)
+		start := time.Now()
+		result, err := svc.ExecuteFlow(wfID, "parallelPipeline")
+		duration := time.Since(start)
+		assert.NoError(t, err)
+		assert.Equal(t, "result1 | result2", result)
+		// assert less then 150 miliseconds which proves the asynchronius way
+		assert.Less(t, duration, 150*time.Millisecond)
+		wf, err := svc.GetWorkflow(wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
+		assert.Len(t, wf.Tasks, 2)
+		taskIDs := make(map[string]bool)
+		for _, task := range wf.Tasks {
+			taskIDs[task.ID] = true
+			assert.Equal(t, models.CompletedTaskStatus, task.Status)
+		}
+		assert.True(t, taskIDs["task1"])
+		assert.True(t, taskIDs["task2"])
 	})
 
 }
