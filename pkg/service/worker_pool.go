@@ -35,6 +35,7 @@ type WorkerPool struct {
 	tasks       map[string]TaskFunc
 	taskDeps    map[string][]string
 	taskTypes   map[string]string // can be "task" or "flow"
+	taskConfigs map[string]*models.TaskConfig
 	store       storage.Store
 	logger      Logger
 	taskService *TaskService
@@ -57,6 +58,7 @@ func NewWorkerPool(
 		tasks:       tasks,
 		taskDeps:    taskDeps,
 		taskTypes:   make(map[string]string),
+		taskConfigs: map[string]*models.TaskConfig{},
 		store:       store,
 		taskService: taskService,
 		logger:      logger,
@@ -79,12 +81,18 @@ func (wp *WorkerPool) Start(workers int) {
 }
 
 // UpdateTasks updates the tasks and dependencies
-func (wp *WorkerPool) UpdateTasks(tasks map[string]TaskFunc, taskDeps map[string][]string, taskTypes map[string]string) {
+func (wp *WorkerPool) UpdateTasks(
+	tasks map[string]TaskFunc,
+	taskDeps map[string][]string,
+	taskTypes map[string]string,
+	taskCfgs map[string]*models.TaskConfig,
+) {
 	wp.mu.Lock()
 	defer wp.mu.Unlock()
 	wp.tasks = tasks
 	wp.taskDeps = taskDeps
 	wp.taskTypes = taskTypes
+	wp.taskConfigs = taskCfgs
 }
 
 // ExecuteTasks executes tasks for a specific workflow and execution id
@@ -117,6 +125,12 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 			deps = []string{}
 		}
 		isTask := wp.taskTypes[taskID] == "task"
+		retries := 0
+		taskCfg := wp.taskConfigs[taskID]
+		// currently only supportive for tasks only
+		if taskCfg != nil {
+			retries = taskCfg.Retries
+		}
 		wp.mu.RUnlock()
 
 		task := models.Task{
@@ -126,8 +140,8 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 			Status:       models.PendingTaskStatus,
 			ExecutionID:  execID,
 			Dependencies: deps,
-			// TODO this should be configurable
-			Retries: 2,
+			Retries:      retries,
+			// TODO add Timeout
 		}
 
 		if isTask {

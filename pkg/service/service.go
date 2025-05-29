@@ -28,15 +28,16 @@ type TaskFunc func(...TaskResult) (TaskResult, error)
 // A workflow is a specific instance of a pipeline run, persisted with a unique ID.
 // A flow is a reusable definition of tasks and dependencies, executed within a workflow.
 type WorkflowService struct {
-	store    storage.Store
-	logger   Logger
-	tasks    map[string]TaskFunc
-	taskDeps map[string][]string
-	flows    map[string]TaskFunc
-	flowDeps map[string][]string
-	results  map[int64]map[string]TaskResult
-	wp       *WorkerPool
-	mu       sync.RWMutex
+	store       storage.Store
+	logger      Logger
+	tasks       map[string]TaskFunc
+	taskDeps    map[string][]string
+	taskConfigs map[string]*models.TaskConfig
+	flows       map[string]TaskFunc
+	flowDeps    map[string][]string
+	results     map[int64]map[string]TaskResult
+	wp          *WorkerPool
+	mu          sync.RWMutex
 }
 
 func NewWorkflowService(store storage.Store, logger Logger) *WorkflowService {
@@ -44,32 +45,41 @@ func NewWorkflowService(store storage.Store, logger Logger) *WorkflowService {
 	wp := NewWorkerPool(make(map[string]TaskFunc), make(map[string][]string), store, taskService, logger)
 	wp.Start(0)
 	return &WorkflowService{
-		store:    store,
-		logger:   logger,
-		tasks:    make(map[string]TaskFunc),
-		taskDeps: make(map[string][]string),
-		flows:    make(map[string]TaskFunc),
-		flowDeps: make(map[string][]string),
-		results:  make(map[int64]map[string]TaskResult),
-		wp:       wp,
+		store:       store,
+		logger:      logger,
+		tasks:       make(map[string]TaskFunc),
+		taskDeps:    make(map[string][]string),
+		taskConfigs: make(map[string]*models.TaskConfig),
+		flows:       make(map[string]TaskFunc),
+		flowDeps:    make(map[string][]string),
+		results:     make(map[int64]map[string]TaskResult),
+		wp:          wp,
 	}
 }
 
 // RegisterTask registers a task, inferring dependencies from parameter names
-func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string) error {
+func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string, opts ...models.TaskOption) error {
 	if err := validateTaskFunc(fn); err != nil {
 		return fmt.Errorf("invalid task function for '%s': %v", name, err)
 	}
 	if len(name) == 0 {
 		return errors.New("empty task name")
 	}
+
+	cfg := &models.TaskConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
 	s.mu.Lock()
 	s.tasks[name] = fn
 	s.taskDeps[name] = deps
+	s.taskConfigs[name] = cfg
 	// Update WorkerPool
-	combinedTasks := make(map[string]TaskFunc)
-	combinedDeps := make(map[string][]string)
-	combinedTypes := make(map[string]string)
+	combinedTasks := make(map[string]TaskFunc, len(s.tasks))
+	combinedDeps := make(map[string][]string, len(s.taskDeps))
+	combinedTypes := make(map[string]string, len(s.wp.taskTypes))
+	combinedCfgs := make(map[string]*models.TaskConfig, len(s.taskConfigs))
 	for k, v := range s.tasks {
 		combinedTasks[k] = v
 		combinedDeps[k] = s.taskDeps[k]
@@ -80,8 +90,11 @@ func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string) 
 		combinedDeps[k] = s.flowDeps[k]
 		combinedTypes[k] = "flow"
 	}
+	for k, v := range s.taskConfigs {
+		combinedCfgs[k] = v
+	}
 	s.mu.Unlock()
-	s.wp.UpdateTasks(combinedTasks, combinedDeps, combinedTypes)
+	s.wp.UpdateTasks(combinedTasks, combinedDeps, combinedTypes, combinedCfgs)
 	s.logger.Infof("Registered task '%s' with dependencies '%v'", name, deps)
 	return nil
 }
@@ -112,7 +125,8 @@ func (s *WorkflowService) RegisterFlow(name string, fn TaskFunc, deps []string) 
 		combinedDeps[k] = s.flowDeps[k]
 		combinedTypes[k] = "flow"
 	}
-	s.wp.UpdateTasks(combinedTasks, combinedDeps, combinedTypes)
+	taskCfgs := s.taskConfigs
+	s.wp.UpdateTasks(combinedTasks, combinedDeps, combinedTypes, taskCfgs)
 	s.mu.Unlock()
 	s.logger.Infof("Registered flow '%s' with dependencies %v", name, deps)
 	return nil

@@ -25,3 +25,22 @@ type Task struct {
 	ExecutionID  string     `json:"execution_id" db:"execution_id"`         // Unique execution identifier (e.g., "wf1:flow1")
 	Dependencies []string   `json:"dependencies" db:"dependencies"`         // List of task IDs this task depends on
 }
+
+type TaskConfig struct {
+	Retries int
+	Timeout time.Duration
+}
+
+type TaskOption func(*TaskConfig)
+
+func WithRetries(retries int) TaskOption {
+	return func(tc *TaskConfig) {
+		tc.Retries = retries
+	}
+}
+
+func WithTimeout(timeout time.Duration) TaskOption {
+	return func(tc *TaskConfig) {
+		tc.Timeout = timeout
+	}
+}
