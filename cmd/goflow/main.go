@@ -46,7 +46,7 @@ func main() {
 }
 
 func initStore(dbConnStr string) *storage.PostgresStore {
-	store, err := storage.InitStoreAndRunMigrations(dbConnStr)
+	store, err := storage.InitStore(dbConnStr)
 	if err != nil {
 		log.GetLogger().Errorf("Failed to initialize store: %v", err)
 		os.Exit(1)
