@@ -7,6 +7,8 @@ import (
 	"github.com/ignatij/goflow/pkg/models"
 	"github.com/ignatij/goflow/pkg/storage"
 	"github.com/jmoiron/sqlx"
+
+	_ "github.com/lib/pq"
 )
 
 // DBInterface defines the database operations
