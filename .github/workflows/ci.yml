@@ -42,3 +42,23 @@ jobs:
         run: |
           # go run cmd/goflow-migrate/main.go migrate --db "postgres://testuser:testpass@localhost:5433/goflow_test?sslmode=disable"
           go test -race -count=1 -shuffle=on ./...
+  
+  migrate_dev:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+
+    env:
+      DB_URL_DEV: ${{ secrets.DB_URL_DEV }}  # Full DB URL for dev environment
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install migrate CLI
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.18.2/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate /usr/local/bin
+
+      - name: Run migrations on dev database
+        run: migrate -path migrations -database "$DB_URL_DEV" up
