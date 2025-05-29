@@ -977,4 +977,44 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.True(t, taskIDs["task2"])
 	})
 
+	t.Run("TaskRetries", func(t *testing.T) {
+		svc := service.NewWorkflowService(postgresStore(t), logger{})
+
+		attempts := 0
+		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+			attempts++
+			if attempts < 3 {
+				return nil, errors.Errorf("ooops, something went wrong on attempt: %d", attempts)
+			}
+			return "raw data", nil
+		}
+		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
+		}
+
+		assert.NoError(t, svc.RegisterTask("fetch", fetchTask, []string{}, models.WithRetries(2)))
+		assert.NoError(t, svc.RegisterFlow("pipeline", pipelineFlow, []string{"fetch"}))
+
+		wfID, err := svc.CreateWorkflow("dataPipeline")
+		assert.NoError(t, err)
+
+		result, err := svc.ExecuteFlow(wfID, "pipeline")
+		assert.NoError(t, err)
+		assert.Equal(t, "processed: raw data", result)
+
+		workflows, err := svc.ListWorkflows()
+		assert.NoError(t, err)
+		wf, err := svc.GetWorkflow(wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, "dataPipeline", wf.Name)
+		assert.Equal(t, models.CompletedWorkflowStatus, workflows[0].Status)
+
+		// Verify tasks in DB
+		assert.Len(t, wf.Tasks, 1) // Only "fetch" task persisted
+		assert.Equal(t, "fetch", wf.Tasks[0].ID)
+		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
+		assert.Equal(t, 2, wf.Tasks[0].Retries)
+		assert.Equal(t, 3, attempts)
+	})
+
 }
