@@ -161,8 +161,8 @@ func (s *PostgresStore) SaveTask(t models.Task) error {
 	_, err := s.db.Exec(`
 		INSERT INTO tasks (
 			id, workflow_id, name, status, retries, attempts, error_msg, 
-			started_at, finished_at, execution_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			started_at, finished_at, execution_id, timeout
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (id, workflow_id) DO UPDATE SET
 			name = EXCLUDED.name,
 			status = EXCLUDED.status,
@@ -171,9 +171,10 @@ func (s *PostgresStore) SaveTask(t models.Task) error {
 			error_msg = EXCLUDED.error_msg,
 			started_at = EXCLUDED.started_at,
 			finished_at = EXCLUDED.finished_at,
-			execution_id = EXCLUDED.execution_id`,
+			execution_id = EXCLUDED.execution_id,
+			timeout = EXCLUDED.timeout`,
 		t.ID, t.WorkflowID, t.Name, t.Status, t.Retries, t.Attempts,
-		t.ErrorMsg, t.StartedAt, t.FinishedAt, t.ExecutionID)
+		t.ErrorMsg, t.StartedAt, t.FinishedAt, t.ExecutionID, t.Timeout)
 	if err != nil {
 		return fmt.Errorf("save task %s: %w", t.ID, err)
 	}
@@ -211,7 +212,7 @@ func (s *PostgresStore) GetTask(id string, workflowID int64) (models.Task, error
 	err := s.db.Get(&task, `
 		SELECT 
 			id, workflow_id, name, status, retries, attempts, error_msg, 
-			started_at, finished_at, execution_id
+			started_at, finished_at, execution_id, timeout
 		FROM tasks
 		WHERE id = $1 AND workflow_id = $2`, id, workflowID)
 	if err == sql.ErrNoRows {

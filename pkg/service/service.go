@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -22,7 +23,14 @@ type Logger interface {
 type TaskResult interface{}
 
 // TaskFunc is a function defining task/flow, with dependencies as parameters
-type TaskFunc func(...TaskResult) (TaskResult, error)
+type TaskFunc func(args ...TaskResult) (TaskResult, error)
+type ContextTaskFunc func(ctx context.Context, args ...TaskResult) (TaskResult, error)
+
+func WrapTaskFunc(fn TaskFunc) ContextTaskFunc {
+	return func(ctx context.Context, args ...TaskResult) (TaskResult, error) {
+		return fn(args...)
+	}
+}
 
 // WorkflowService manages workflow instances and their flow executions.
 // A workflow is a specific instance of a pipeline run, persisted with a unique ID.
@@ -30,10 +38,10 @@ type TaskFunc func(...TaskResult) (TaskResult, error)
 type WorkflowService struct {
 	store       storage.Store
 	logger      Logger
-	tasks       map[string]TaskFunc
+	tasks       map[string]ContextTaskFunc
 	taskDeps    map[string][]string
 	taskConfigs map[string]*models.TaskConfig
-	flows       map[string]TaskFunc
+	flows       map[string]ContextTaskFunc
 	flowDeps    map[string][]string
 	results     map[int64]map[string]TaskResult
 	wp          *WorkerPool
@@ -42,15 +50,15 @@ type WorkflowService struct {
 
 func NewWorkflowService(store storage.Store, logger Logger) *WorkflowService {
 	taskService := NewTaskService(store, logger)
-	wp := NewWorkerPool(make(map[string]TaskFunc), make(map[string][]string), store, taskService, logger)
+	wp := NewWorkerPool(make(map[string]ContextTaskFunc), make(map[string][]string), store, taskService, logger)
 	wp.Start(0)
 	return &WorkflowService{
 		store:       store,
 		logger:      logger,
-		tasks:       make(map[string]TaskFunc),
+		tasks:       make(map[string]ContextTaskFunc),
 		taskDeps:    make(map[string][]string),
 		taskConfigs: make(map[string]*models.TaskConfig),
-		flows:       make(map[string]TaskFunc),
+		flows:       make(map[string]ContextTaskFunc),
 		flowDeps:    make(map[string][]string),
 		results:     make(map[int64]map[string]TaskResult),
 		wp:          wp,
@@ -58,7 +66,7 @@ func NewWorkflowService(store storage.Store, logger Logger) *WorkflowService {
 }
 
 // RegisterTask registers a task, inferring dependencies from parameter names
-func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string, opts ...models.TaskOption) error {
+func (s *WorkflowService) RegisterTask(name string, fn ContextTaskFunc, deps []string, opts ...models.TaskOption) error {
 	if err := validateTaskFunc(fn); err != nil {
 		return fmt.Errorf("invalid task function for '%s': %v", name, err)
 	}
@@ -76,7 +84,7 @@ func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string, 
 	s.taskDeps[name] = deps
 	s.taskConfigs[name] = cfg
 	// Update WorkerPool
-	combinedTasks := make(map[string]TaskFunc, len(s.tasks))
+	combinedTasks := make(map[string]ContextTaskFunc, len(s.tasks))
 	combinedDeps := make(map[string][]string, len(s.taskDeps))
 	combinedTypes := make(map[string]string, len(s.wp.taskTypes))
 	combinedCfgs := make(map[string]*models.TaskConfig, len(s.taskConfigs))
@@ -100,7 +108,7 @@ func (s *WorkflowService) RegisterTask(name string, fn TaskFunc, deps []string, 
 }
 
 // RegisterFlow registers a flow, inferring dependencies from parameter names
-func (s *WorkflowService) RegisterFlow(name string, fn TaskFunc, deps []string) error {
+func (s *WorkflowService) RegisterFlow(name string, fn ContextTaskFunc, deps []string) error {
 	if len(name) == 0 {
 		return errors.New("empty flow name")
 	}
@@ -111,7 +119,7 @@ func (s *WorkflowService) RegisterFlow(name string, fn TaskFunc, deps []string) 
 	s.flows[name] = fn
 	s.flowDeps[name] = deps
 	// Update WorkerPool
-	combinedTasks := make(map[string]TaskFunc)
+	combinedTasks := make(map[string]ContextTaskFunc)
 	combinedDeps := make(map[string][]string)
 	combinedTypes := make(map[string]string)
 
@@ -133,7 +141,7 @@ func (s *WorkflowService) RegisterFlow(name string, fn TaskFunc, deps []string) 
 }
 
 // validateTaskFunc checks if the function matches the expected signature
-func validateTaskFunc(fn TaskFunc) error {
+func validateTaskFunc(fn ContextTaskFunc) error {
 	fnType := reflect.TypeOf(fn)
 	if fn == nil || fnType.Kind() != reflect.Func {
 		return errors.New("must be a function")

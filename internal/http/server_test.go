@@ -2,6 +2,7 @@ package http_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,10 +37,10 @@ func TestE2EServer(t *testing.T) {
 	newServerWithFlow := func(store storage.Store) *httptest.Server {
 		svc := service.NewWorkflowService(store, log.GetLogger())
 		// Register a test task and flow
-		_ = svc.RegisterTask("fetch", func(args ...service.TaskResult) (service.TaskResult, error) {
+		_ = svc.RegisterTask("fetch", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			return "fetch_result", nil
 		}, nil)
-		_ = svc.RegisterFlow("process", func(args ...service.TaskResult) (service.TaskResult, error) {
+		_ = svc.RegisterFlow("process", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			if len(args) == 0 {
 				return "process_result", nil
 			}
