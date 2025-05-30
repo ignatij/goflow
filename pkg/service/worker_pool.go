@@ -11,6 +11,11 @@ import (
 	"github.com/ignatij/goflow/pkg/storage"
 )
 
+const (
+	// default task timeout is 1m
+	DefaultTaskTimeout = 60 * time.Second
+)
+
 // executionState holds state for a single execution (workflow + flow)
 type executionState struct {
 	taskErrors   map[string]error
@@ -32,7 +37,7 @@ type TaskContext struct {
 
 // WorkerPool manages parallel task execution with dependency enforcement
 type WorkerPool struct {
-	tasks       map[string]TaskFunc
+	tasks       map[string]ContextTaskFunc
 	taskDeps    map[string][]string
 	taskTypes   map[string]string // can be "task" or "flow"
 	taskConfigs map[string]*models.TaskConfig
@@ -48,7 +53,7 @@ type WorkerPool struct {
 }
 
 func NewWorkerPool(
-	tasks map[string]TaskFunc,
+	tasks map[string]ContextTaskFunc,
 	taskDeps map[string][]string,
 	store storage.Store,
 	taskService *TaskService,
@@ -82,7 +87,7 @@ func (wp *WorkerPool) Start(workers int) {
 
 // UpdateTasks updates the tasks and dependencies
 func (wp *WorkerPool) UpdateTasks(
-	tasks map[string]TaskFunc,
+	tasks map[string]ContextTaskFunc,
 	taskDeps map[string][]string,
 	taskTypes map[string]string,
 	taskCfgs map[string]*models.TaskConfig,
@@ -126,10 +131,12 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 		}
 		isTask := wp.taskTypes[taskID] == "task"
 		retries := 0
+		var timeout *time.Duration
 		taskCfg := wp.taskConfigs[taskID]
 		// currently only supportive for tasks only
 		if taskCfg != nil {
 			retries = taskCfg.Retries
+			timeout = taskCfg.Timeout
 		}
 		wp.mu.RUnlock()
 
@@ -141,7 +148,7 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 			ExecutionID:  execID,
 			Dependencies: deps,
 			Retries:      retries,
-			// TODO add Timeout
+			Timeout:      timeout,
 		}
 
 		if isTask {
@@ -271,19 +278,73 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		}
 	}
 
+	// execute task
 	var result TaskResult
 	var taskErr error
+
+	timeout := task.Timeout
+	if timeout == nil {
+		// timeout is not defined on task, going with default 1min timeout
+		var defaultTimeout = DefaultTaskTimeout
+		timeout = &defaultTimeout
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+
+	resultCh := make(chan struct {
+		res TaskResult
+		err error
+	}, 1)
+
 	for attempt := 0; attempt <= task.Retries; attempt++ {
-		result, taskErr = taskFn(args...)
+		go func() {
+			res, err := taskFn(timeoutCtx, args...)
+			select {
+			case resultCh <- struct {
+				res TaskResult
+				err error
+			}{res, err}:
+			case <-timeoutCtx.Done():
+				// Context expired before result could be sent, drop result to avoid goroutine leak
+			}
+
+		}()
+		select {
+		case r := <-resultCh:
+			result, taskErr = r.res, r.err
+		case <-timeoutCtx.Done():
+			taskErr = timeoutCtx.Err()
+		}
 		if taskErr == nil {
 			break
 		}
 		task.Attempts++
 		task.ErrorMsg = taskErr.Error()
 		if attempt < task.Retries {
-			wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
-			time.Sleep(100 * time.Millisecond) // backoff
-			continue
+			select {
+			case <-timeoutCtx.Done():
+				task.ErrorMsg = timeoutCtx.Err().Error()
+				break
+			// TODO this should be a linear or exponential backoff for I/O-heavy tasks
+			case <-time.After(100 * time.Millisecond):
+				// backoff
+				wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
+				continue
+			}
+		}
+	}
+
+	select {
+	case <-timeoutCtx.Done():
+		// TODO this should be Warnf
+		wp.logger.Infof("Task %s failed due to timeout: %v", task.ID, timeoutCtx.Err())
+	default:
+		if taskErr != nil {
+			// TODO this should be Warnf
+			wp.logger.Infof("Task %s failed after %d attempts: %v", task.ID, task.Attempts, taskErr)
+		} else {
+			wp.logger.Infof("Task %s completed successfully", task.ID)
 		}
 	}
 
@@ -298,7 +359,6 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 			}
 		}
 	} else {
-		// state.taskResults[task.ID] = result
 		ctx.ResultsLock.Lock()
 		ctx.Results[task.ID] = result
 		ctx.ResultsLock.Unlock()

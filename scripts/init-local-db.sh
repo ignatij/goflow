@@ -61,6 +61,10 @@ case "$ACTION" in
         migrate_db
         echo "Database is running and migrated. Connect with: $CONN_STR"
         ;;
+    migrate)
+        migrate_db
+        echo "Database migrated."
+        ;;
     stop)
         stop_db
         echo "Database stopped."

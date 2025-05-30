@@ -13,22 +13,23 @@ const (
 
 // Task represents a task in a workflow
 type Task struct {
-	ID           string     `json:"id" db:"id"`                             // Unique identifier (e.g., "t1" or UUID)
-	WorkflowID   int64      `json:"workflow_id" db:"workflow_id"`           // Foreign key to Workflow
-	Name         string     `json:"name" db:"name"`                         // Descriptive name (e.g., "FetchData")
-	Status       TaskStatus `json:"status" db:"status"`                     // "pending", "running", "completed", "failed"
-	Retries      int        `json:"retries" db:"retries"`                   // Max retry attempts
-	Attempts     int        `json:"attempts" db:"attempts"`                 // Current attempt count
-	ErrorMsg     string     `json:"error,omitempty" db:"error_msg"`         // Last error message (optional)
-	StartedAt    *time.Time `json:"started_at,omitempty" db:"started_at"`   // Nullable start time
-	FinishedAt   *time.Time `json:"finished_at,omitempty" db:"finished_at"` // Nullable end time
-	ExecutionID  string     `json:"execution_id" db:"execution_id"`         // Unique execution identifier (e.g., "wf1:flow1")
-	Dependencies []string   `json:"dependencies" db:"dependencies"`         // List of task IDs this task depends on
+	ID           string         `json:"id" db:"id"`                             // Unique identifier (e.g., "t1" or UUID)
+	WorkflowID   int64          `json:"workflow_id" db:"workflow_id"`           // Foreign key to Workflow
+	Name         string         `json:"name" db:"name"`                         // Descriptive name (e.g., "FetchData")
+	Status       TaskStatus     `json:"status" db:"status"`                     // "pending", "running", "completed", "failed"
+	Retries      int            `json:"retries" db:"retries"`                   // Max retry attempts
+	Attempts     int            `json:"attempts" db:"attempts"`                 // Current attempt count
+	ErrorMsg     string         `json:"error,omitempty" db:"error_msg"`         // Last error message (optional)
+	StartedAt    *time.Time     `json:"started_at,omitempty" db:"started_at"`   // Nullable start time
+	FinishedAt   *time.Time     `json:"finished_at,omitempty" db:"finished_at"` // Nullable end time
+	ExecutionID  string         `json:"execution_id" db:"execution_id"`         // Unique execution identifier (e.g., "wf1:flow1")
+	Dependencies []string       `json:"dependencies" db:"dependencies"`         // List of task IDs this task depends on
+	Timeout      *time.Duration `json:"timeout" db:"timeout"`                   // Timeout of the task
 }
 
 type TaskConfig struct {
 	Retries int
-	Timeout time.Duration
+	Timeout *time.Duration
 }
 
 type TaskOption func(*TaskConfig)
@@ -41,6 +42,6 @@ func WithRetries(retries int) TaskOption {
 
 func WithTimeout(timeout time.Duration) TaskOption {
 	return func(tc *TaskConfig) {
-		tc.Timeout = timeout
+		tc.Timeout = &timeout
 	}
 }

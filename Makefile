@@ -13,6 +13,10 @@ start_db: ## 🔩 Start local database container
 init_db: ## 🔩 Start and migrate local database
 	bash scripts/init-local-db.sh start
 
+.PHONY: migrate_db
+migrate_db: ## 🔩 Migrate local database
+	bash scripts/init-local-db.sh migrate
+
 .PHONY: stop_db
 stop_db: ## 🔩 Stop local database
 	bash scripts/init-local-db.sh stop

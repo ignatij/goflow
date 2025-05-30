@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -43,7 +44,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("UnregisteredTaskInFlow", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
 
@@ -69,13 +70,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("DuplicateTaskRegistration", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask1 := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask1 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 1", nil
 		}
-		fetchTask2 := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask2 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 2", nil
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := data[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", data)
@@ -105,17 +106,17 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("DuplicateFlowRegistration", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		pipelineFlow1 := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow1 := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := args[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", args[0])
 			}
 			return "processed v1: " + str, nil
 		}
-		pipelineFlow2 := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow2 := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := args[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", args[0])
@@ -146,7 +147,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("InvalidTaskDependencies", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		processTask := func(args ...service.TaskResult) (service.TaskResult, error) {
+		processTask := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := args[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", args[0])
@@ -155,7 +156,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		}
 
 		assert.NoError(t, svc.RegisterTask("process", processTask, []string{"nonexistent"}))
-		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			return args[0], nil
 		}
 		assert.NoError(t, svc.RegisterFlow("pipeline", pipelineFlow, []string{"process"}))
@@ -178,13 +179,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("EmptyTaskFlowRegistration", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		err := svc.RegisterTask("", func(data ...service.TaskResult) (service.TaskResult, error) {
+		err := svc.RegisterTask("", func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "empty task name")
 
-		err = svc.RegisterFlow("", func(data ...service.TaskResult) (service.TaskResult, error) {
+		err = svc.RegisterFlow("", func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
 		assert.Error(t, err)
@@ -201,10 +202,10 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("BasicPipeline", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := data[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", data)
@@ -238,13 +239,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("MoreComplexPipeline", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		processTask := func(args ...service.TaskResult) (service.TaskResult, error) {
+		processTask := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			return "processing: " + args[0].(string), nil
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
 
@@ -277,13 +278,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("MultipleDependencies", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		processTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		processTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
-		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			fetched := args[0]
 			processed := args[1]
 			return fetched.(string) + " | " + processed.(string), nil
@@ -318,19 +319,19 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("MultipleFlows", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		cleanTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		cleanTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "cleaned: " + data[0].(string), nil
 		}
-		preprocessFlow := func(cleaned ...service.TaskResult) (service.TaskResult, error) {
+		preprocessFlow := func(ctx context.Context, cleaned ...service.TaskResult) (service.TaskResult, error) {
 			return cleaned[0], nil
 		}
-		analyzeTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		analyzeTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "analyzed: " + data[0].(string), nil
 		}
-		reportFlow := func(analyzed ...service.TaskResult) (service.TaskResult, error) {
+		reportFlow := func(ctx context.Context, analyzed ...service.TaskResult) (service.TaskResult, error) {
 			return "report: " + analyzed[0].(string), nil
 		}
 
@@ -369,13 +370,13 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 	t.Run("FailureHandling", func(t *testing.T) {
 		svc := newWorkflowService()
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}
-		failTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		failTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return nil, errors.New("task failed")
 		}
-		flow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		flow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return data, nil
 		}
 
@@ -408,10 +409,10 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 	t.Run("MultipleRuns", func(t *testing.T) {
 		svc := newWorkflowService()
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return time.Now().String(), nil // Dynamic result
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
 
@@ -456,16 +457,16 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 	t.Run("ParallelTaskExecution", func(t *testing.T) {
 		svc := newWorkflowService()
-		task1 := func(data ...service.TaskResult) (service.TaskResult, error) {
+		task1 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			time.Sleep(100 * time.Millisecond)
 			return "result1", nil
 		}
-		task2 := func(data ...service.TaskResult) (service.TaskResult, error) {
+		task2 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			time.Sleep(100 * time.Millisecond)
 			return "result2", nil
 		}
 
-		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			result := make([]string, 0, len(args))
 			for i := 0; i < len(args); i++ {
 				result = append(result, args[i].(string))
@@ -525,7 +526,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("UnregisteredTaskInFlow", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
 
@@ -551,13 +552,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("DuplicateTaskRegistration", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		fetchTask1 := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask1 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 1", nil
 		}
-		fetchTask2 := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask2 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 2", nil
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := data[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", data)
@@ -588,17 +589,17 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("DuplicateFlowRegistration", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		pipelineFlow1 := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow1 := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := args[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", args[0])
 			}
 			return "processed v1: " + str, nil
 		}
-		pipelineFlow2 := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow2 := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := args[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", args[0])
@@ -629,7 +630,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("InvalidTaskDependencies", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		processTask := func(args ...service.TaskResult) (service.TaskResult, error) {
+		processTask := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := args[0].(string)
 			if !ok {
 				return nil, fmt.Errorf("expected string, got %T", args[0])
@@ -638,7 +639,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		}
 
 		assert.NoError(t, svc.RegisterTask("process", processTask, []string{"nonexistent"}))
-		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			return args[0], nil
 		}
 		assert.NoError(t, svc.RegisterFlow("pipeline", pipelineFlow, []string{"process"}))
@@ -661,13 +662,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("EmptyTaskFlowRegistration", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		err := svc.RegisterTask("", func(data ...service.TaskResult) (service.TaskResult, error) {
+		err := svc.RegisterTask("", func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "empty task name")
 
-		err = svc.RegisterFlow("", func(data ...service.TaskResult) (service.TaskResult, error) {
+		err = svc.RegisterFlow("", func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}, []string{})
 		assert.Error(t, err)
@@ -685,10 +686,10 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("BasicPipeline", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
 
@@ -718,13 +719,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	t.Run("MoreComplexPipeline", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		processTask := func(args ...service.TaskResult) (service.TaskResult, error) {
+		processTask := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			return "processing: " + args[0].(string), nil
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
 
@@ -756,13 +757,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 	t.Run("MultipleDependencies", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		processTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		processTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
-		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			fetched := args[0]
 			processed := args[1]
 			return fetched.(string) + " | " + processed.(string), nil
@@ -796,19 +797,19 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 	t.Run("MultipleFlows", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
-		cleanTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		cleanTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "cleaned: " + data[0].(string), nil
 		}
-		preprocessFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		preprocessFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return data[0], nil
 		}
-		analyzeTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		analyzeTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "analyzed: " + data[0].(string), nil
 		}
-		reportFlow := func(analyzed ...service.TaskResult) (service.TaskResult, error) {
+		reportFlow := func(ctx context.Context, analyzed ...service.TaskResult) (service.TaskResult, error) {
 			return "report: " + analyzed[0].(string), nil
 		}
 
@@ -849,13 +850,13 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 	t.Run("FailureHandling", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}
-		failTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		failTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return nil, errors.New("task failed")
 		}
-		flow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		flow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return data, nil
 		}
 
@@ -888,10 +889,10 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 	t.Run("MultipleRuns", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return time.Now().String(), nil // Dynamic result
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
 
@@ -936,16 +937,16 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 
 	t.Run("ParallelTaskExecution", func(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
-		task1 := func(data ...service.TaskResult) (service.TaskResult, error) {
+		task1 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			time.Sleep(100 * time.Millisecond)
 			return "result1", nil
 		}
-		task2 := func(data ...service.TaskResult) (service.TaskResult, error) {
+		task2 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			time.Sleep(100 * time.Millisecond)
 			return "result2", nil
 		}
 
-		pipelineFlow := func(args ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			result := make([]string, 0, len(args))
 			for i := 0; i < len(args); i++ {
 				result = append(result, args[i].(string))
@@ -981,14 +982,14 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		svc := service.NewWorkflowService(postgresStore(t), logger{})
 
 		attempts := 0
-		fetchTask := func(data ...service.TaskResult) (service.TaskResult, error) {
+		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			attempts++
 			if attempts < 3 {
 				return nil, errors.Errorf("ooops, something went wrong on attempt: %d", attempts)
 			}
 			return "raw data", nil
 		}
-		pipelineFlow := func(data ...service.TaskResult) (service.TaskResult, error) {
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
 		}
 
@@ -1015,6 +1016,47 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Equal(t, "COMPLETED", string(wf.Tasks[0].Status))
 		assert.Equal(t, 2, wf.Tasks[0].Retries)
 		assert.Equal(t, 3, attempts)
+	})
+
+	t.Run("TaskTimeout", func(t *testing.T) {
+		svc := service.NewWorkflowService(postgresStore(t), logger{})
+
+		// This task intentionally sleeps for longer than the timeout
+		slowTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
+			select {
+			case <-time.After(2 * time.Second):
+				return "this won't be returned", nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: " + data[0].(string), nil
+		}
+
+		// Register task with a 1 second timeout
+		assert.NoError(t, svc.RegisterTask("slow", slowTask, []string{}, models.WithTimeout(1*time.Second)))
+		assert.NoError(t, svc.RegisterFlow("pipeline", pipelineFlow, []string{"slow"}))
+
+		wfID, err := svc.CreateWorkflow("timeoutPipeline")
+		assert.NoError(t, err)
+
+		result, err := svc.ExecuteFlow(wfID, "pipeline")
+
+		// Expect an error due to task timeout
+		assert.Error(t, err)
+		assert.Nil(t, result)
+
+		// Check workflow and task status
+		wf, err := svc.GetWorkflow(wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, models.FailedWorkflowStatus, wf.Status)
+
+		assert.Len(t, wf.Tasks, 1)
+		assert.Equal(t, "slow", wf.Tasks[0].ID)
+		assert.Equal(t, models.FailedTaskStatus, wf.Tasks[0].Status)
+		assert.Contains(t, wf.Tasks[0].ErrorMsg, "context deadline exceeded") // or your custom timeout error
 	})
 
 }

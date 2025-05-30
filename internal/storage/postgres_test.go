@@ -156,6 +156,7 @@ func TestPostgresStore(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
+		timeout := 10 * time.Second
 		task := models.Task{
 			ID:           "t1",
 			WorkflowID:   wfID,
@@ -164,6 +165,7 @@ func TestPostgresStore(t *testing.T) {
 			Retries:      2,
 			ExecutionID:  "wf1:flow1",
 			Dependencies: []string{"t0"},
+			Timeout:      &timeout,
 		}
 		err = store.SaveTask(task)
 		assert.NoError(t, err)
@@ -174,6 +176,7 @@ func TestPostgresStore(t *testing.T) {
 		assert.Equal(t, task.Retries, savedTask.Retries)
 		assert.Equal(t, task.ExecutionID, savedTask.ExecutionID)
 		assert.Equal(t, task.Dependencies, savedTask.Dependencies)
+		assert.Equal(t, *task.Timeout, *savedTask.Timeout)
 	})
 
 	// Test SaveTaskIdempotent
