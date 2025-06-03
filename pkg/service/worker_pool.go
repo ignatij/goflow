@@ -414,7 +414,7 @@ func (wp *WorkerPool) markTaskFailed(task models.Task, err error) {
 
 	state.mu.Lock()
 	state.pendingCount--
-	if state.pendingCount == 0 || len(state.taskErrors) > 0 {
+	if state.pendingCount == 0 {
 		select {
 		case state.completeChan <- struct{}{}:
 		default:
