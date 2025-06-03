@@ -48,9 +48,9 @@ type WorkflowService struct {
 	mu          sync.RWMutex
 }
 
-func NewWorkflowService(store storage.Store, logger Logger) *WorkflowService {
+func NewWorkflowService(ctx context.Context, store storage.Store, logger Logger) *WorkflowService {
 	taskService := NewTaskService(store, logger)
-	wp := NewWorkerPool(make(map[string]ContextTaskFunc), make(map[string][]string), store, taskService, logger)
+	wp := NewWorkerPool(ctx, make(map[string]ContextTaskFunc), make(map[string][]string), store, taskService, logger)
 	wp.Start(0)
 	return &WorkflowService{
 		store:       store,

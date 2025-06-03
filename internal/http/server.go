@@ -21,7 +21,8 @@ import (
 // StartServer runs the GoFlow HTTP server with graceful shutdown.
 // It returns an error if the server fails to start or shut down cleanly.
 func StartServer(port string, store storage.Store) error {
-	svc := service.NewWorkflowService(store, log.GetLogger())
+	ctx := context.Background()
+	svc := service.NewWorkflowService(ctx, store, log.GetLogger())
 	http.HandleFunc("/health", HealthHandler)
 	http.HandleFunc("/workflows", WorkflowsHandler(svc))
 	http.HandleFunc("/workflows/", WorkflowByIDHandler(svc))
@@ -52,7 +53,7 @@ func StartServer(port string, store storage.Store) error {
 	}
 
 	// Perform graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.GetLogger().Errorf("Shutdown failed: %v", err)

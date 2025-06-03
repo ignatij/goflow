@@ -53,12 +53,13 @@ type WorkerPool struct {
 }
 
 func NewWorkerPool(
+	mainCtx context.Context,
 	tasks map[string]ContextTaskFunc,
 	taskDeps map[string][]string,
 	store storage.Store,
 	taskService *TaskService,
 	logger Logger) *WorkerPool {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(mainCtx)
 	return &WorkerPool{
 		tasks:       tasks,
 		taskDeps:    taskDeps,
@@ -289,7 +290,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		timeout = &defaultTimeout
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), *timeout)
+	timeoutCtx, cancel := context.WithTimeout(wp.ctx, *timeout)
 	defer cancel()
 
 	resultCh := make(chan struct {
@@ -355,7 +356,6 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		if isTask {
 			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.FailedTaskStatus, taskErr.Error()); updateErr != nil {
 				wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
-				return
 			}
 		}
 	} else {
@@ -379,7 +379,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		}
 	}
 	state.pendingCount--
-	if state.pendingCount == 0 || len(state.taskErrors) > 0 {
+	if state.pendingCount == 0 {
 		select {
 		case state.completeChan <- struct{}{}:
 		default:
