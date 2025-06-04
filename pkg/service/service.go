@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +38,7 @@ func WrapTaskFunc(fn TaskFunc) ContextTaskFunc {
 // A flow is a reusable definition of tasks and dependencies, executed within a workflow.
 type WorkflowService struct {
 	store       storage.Store
+	ctx         context.Context
 	logger      Logger
 	tasks       map[string]ContextTaskFunc
 	taskDeps    map[string][]string
@@ -54,6 +56,7 @@ func NewWorkflowService(ctx context.Context, store storage.Store, logger Logger)
 	wp.Start(0)
 	return &WorkflowService{
 		store:       store,
+		ctx:         ctx,
 		logger:      logger,
 		tasks:       make(map[string]ContextTaskFunc),
 		taskDeps:    make(map[string][]string),
@@ -204,7 +207,12 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 
 	// // Execute tasks and flows using WorkerPool
 	execID := fmt.Sprintf("exec-%d-%s", workflowID, flowName)
-	results, errs := s.wp.ExecuteTasks(execID, WorkflowContext{WorkflowID: workflowID, Results: s.results[workflowID], ResultsLock: &sync.RWMutex{}}, order)
+	workflowCtx := WorkflowContext{
+		WorkflowID:  workflowID,
+		Results:     s.results[workflowID],
+		ResultsLock: &sync.RWMutex{},
+	}
+	results, errs := s.wp.ExecuteTasks(execID, workflowCtx, order)
 
 	// store results
 	s.mu.Lock()
@@ -217,7 +225,11 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 		if errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus); errU != nil {
 			return nil, errors.Wrap(errU, "failed to update workflow status after errors")
 		}
-		return nil, fmt.Errorf("execution of flow '%s' failed: %v", flowName, errs)
+		var combinedErrs []string
+		for id, err := range errs {
+			combinedErrs = append(combinedErrs, fmt.Sprintf("%s: %v", id, err))
+		}
+		return nil, fmt.Errorf("execution of flow '%s' failed: %s", flowName, strings.Join(combinedErrs, "; "))
 	}
 
 	// // Mark workflow as completed
@@ -235,7 +247,6 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 	}
 	s.logger.Infof("Executed flow '%s' for workflow %d", flowName, workflowID)
 	return result, nil
-	// return nil, nil
 }
 
 // topologicalSort computes the execution order for a flow

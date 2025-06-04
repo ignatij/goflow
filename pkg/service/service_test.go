@@ -1059,4 +1059,53 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Contains(t, wf.Tasks[0].ErrorMsg, "context deadline exceeded")
 	})
 
+	t.Run("CancelledMainContext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		svc := service.NewWorkflowService(ctx, postgresStore(t), logger{})
+		resultChan := make(chan struct{})
+
+		sleepTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
+			select {
+			case <-time.After(5 * time.Second):
+				return nil, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: ", nil
+		}
+
+		assert.NoError(t, svc.RegisterTask("sleep", sleepTask, []string{}))
+		assert.NoError(t, svc.RegisterFlow("pipeline", pipelineFlow, []string{"sleep"}))
+
+		wfID, err := svc.CreateWorkflow("cancelledContextPipeline")
+		assert.NoError(t, err)
+
+		go func() {
+			time.Sleep(1 * time.Second)
+			cancel()
+			resultChan <- struct{}{}
+		}()
+
+		result, err := svc.ExecuteFlow(wfID, "pipeline")
+
+		<-resultChan
+
+		// Expect an error due to task timeout
+		assert.Error(t, err)
+		assert.Nil(t, result)
+
+		// Check workflow and task status
+		wf, err := svc.GetWorkflow(wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, models.FailedWorkflowStatus, wf.Status)
+
+		assert.Len(t, wf.Tasks, 1)
+		assert.Equal(t, "sleep", wf.Tasks[0].ID)
+		assert.Equal(t, models.FailedTaskStatus, wf.Tasks[0].Status)
+		assert.Contains(t, wf.Tasks[0].ErrorMsg, "context canceled")
+	})
+
 }
