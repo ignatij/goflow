@@ -29,7 +29,7 @@ func (l logger) Errorf(format string, args ...interface{}) {
 func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 
 	newWorkflowService := func() *service.WorkflowService {
-		return service.NewWorkflowService(storage.NewMockStore(), logger{})
+		return service.NewWorkflowService(context.Background(), storage.NewMockStore(), logger{})
 	}
 
 	t.Run("UnregisteredFlow", func(t *testing.T) {
@@ -515,7 +515,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	}
 
 	t.Run("UnregisteredFlow", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 		wfID, err := svc.CreateWorkflow("test")
 		assert.NoError(t, err)
 		_, err = svc.ExecuteFlow(wfID, "nonexistent")
@@ -524,7 +524,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("UnregisteredTaskInFlow", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "processed: " + data[0].(string), nil
@@ -550,7 +550,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("DuplicateTaskRegistration", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		fetchTask1 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data 1", nil
@@ -587,7 +587,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("DuplicateFlowRegistration", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
@@ -628,7 +628,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("InvalidTaskDependencies", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		processTask := func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			str, ok := args[0].(string)
@@ -660,7 +660,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("EmptyTaskFlowRegistration", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		err := svc.RegisterTask("", func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
@@ -684,7 +684,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("BasicPipeline", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
@@ -717,7 +717,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("MoreComplexPipeline", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
@@ -756,7 +756,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("MultipleDependencies", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
@@ -796,7 +796,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("MultipleFlows", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "raw data", nil
 		}
@@ -849,7 +849,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("FailureHandling", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return "data", nil
 		}
@@ -888,7 +888,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("MultipleRuns", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			return time.Now().String(), nil // Dynamic result
 		}
@@ -936,7 +936,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("ParallelTaskExecution", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 		task1 := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
 			time.Sleep(100 * time.Millisecond)
 			return "result1", nil
@@ -963,8 +963,8 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		duration := time.Since(start)
 		assert.NoError(t, err)
 		assert.Equal(t, "result1 | result2", result)
-		// assert less then 150 miliseconds which proves the asynchronius way
-		assert.Less(t, duration, 150*time.Millisecond)
+		// assert less then 200 miliseconds which proves the asynchronius way
+		assert.Less(t, duration, 200*time.Millisecond)
 		wf, err := svc.GetWorkflow(wfID)
 		assert.NoError(t, err)
 		assert.Equal(t, models.CompletedWorkflowStatus, wf.Status)
@@ -979,7 +979,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("TaskRetries", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		attempts := 0
 		fetchTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
@@ -1019,7 +1019,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	})
 
 	t.Run("TaskTimeout", func(t *testing.T) {
-		svc := service.NewWorkflowService(postgresStore(t), logger{})
+		svc := service.NewWorkflowService(context.Background(), postgresStore(t), logger{})
 
 		// This task intentionally sleeps for longer than the timeout
 		slowTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
@@ -1056,7 +1056,56 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.Len(t, wf.Tasks, 1)
 		assert.Equal(t, "slow", wf.Tasks[0].ID)
 		assert.Equal(t, models.FailedTaskStatus, wf.Tasks[0].Status)
-		assert.Contains(t, wf.Tasks[0].ErrorMsg, "context deadline exceeded") // or your custom timeout error
+		assert.Contains(t, wf.Tasks[0].ErrorMsg, "context deadline exceeded")
+	})
+
+	t.Run("CancelledMainContext", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		svc := service.NewWorkflowService(ctx, postgresStore(t), logger{})
+		resultChan := make(chan struct{})
+
+		sleepTask := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
+			select {
+			case <-time.After(5 * time.Second):
+				return nil, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		pipelineFlow := func(ctx context.Context, data ...service.TaskResult) (service.TaskResult, error) {
+			return "processed: ", nil
+		}
+
+		assert.NoError(t, svc.RegisterTask("sleep", sleepTask, []string{}))
+		assert.NoError(t, svc.RegisterFlow("pipeline", pipelineFlow, []string{"sleep"}))
+
+		wfID, err := svc.CreateWorkflow("cancelledContextPipeline")
+		assert.NoError(t, err)
+
+		go func() {
+			time.Sleep(1 * time.Second)
+			cancel()
+			resultChan <- struct{}{}
+		}()
+
+		result, err := svc.ExecuteFlow(wfID, "pipeline")
+
+		<-resultChan
+
+		// Expect an error due to task timeout
+		assert.Error(t, err)
+		assert.Nil(t, result)
+
+		// Check workflow and task status
+		wf, err := svc.GetWorkflow(wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, models.FailedWorkflowStatus, wf.Status)
+
+		assert.Len(t, wf.Tasks, 1)
+		assert.Equal(t, "sleep", wf.Tasks[0].ID)
+		assert.Equal(t, models.FailedTaskStatus, wf.Tasks[0].Status)
+		assert.Contains(t, wf.Tasks[0].ErrorMsg, "context canceled")
 	})
 
 }

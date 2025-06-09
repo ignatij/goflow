@@ -26,7 +26,7 @@ func TestE2EServer(t *testing.T) {
 	defer testDB.Teardown(t)
 
 	newServer := func(store storage.Store) *httptest.Server {
-		svc := service.NewWorkflowService(store, log.GetLogger())
+		svc := service.NewWorkflowService(context.Background(), store, log.GetLogger())
 		mux := http.NewServeMux()
 		mux.HandleFunc("/health", internal_http.HealthHandler)
 		mux.HandleFunc("/workflows", internal_http.WorkflowsHandler(svc))
@@ -35,7 +35,7 @@ func TestE2EServer(t *testing.T) {
 	}
 
 	newServerWithFlow := func(store storage.Store) *httptest.Server {
-		svc := service.NewWorkflowService(store, log.GetLogger())
+		svc := service.NewWorkflowService(context.Background(), store, log.GetLogger())
 		// Register a test task and flow
 		_ = svc.RegisterTask("fetch", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 			return "fetch_result", nil

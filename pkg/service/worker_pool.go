@@ -22,6 +22,7 @@ type executionState struct {
 	pendingCount int           // Tasks not yet completed or failed
 	completeChan chan struct{} // Signals completion or error
 	mu           sync.RWMutex
+	cleanupOnce  sync.Once
 }
 
 type WorkflowContext struct {
@@ -49,16 +50,15 @@ type WorkerPool struct {
 	mu          sync.RWMutex
 	wg          sync.WaitGroup
 	ctx         context.Context
-	cancel      context.CancelFunc
 }
 
 func NewWorkerPool(
+	mainCtx context.Context,
 	tasks map[string]ContextTaskFunc,
 	taskDeps map[string][]string,
 	store storage.Store,
 	taskService *TaskService,
 	logger Logger) *WorkerPool {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &WorkerPool{
 		tasks:       tasks,
 		taskDeps:    taskDeps,
@@ -69,8 +69,7 @@ func NewWorkerPool(
 		logger:      logger,
 		taskChan:    make(chan TaskContext, 100),
 		executions:  make(map[string]*executionState),
-		ctx:         ctx,
-		cancel:      cancel,
+		ctx:         mainCtx,
 	}
 }
 
@@ -102,6 +101,17 @@ func (wp *WorkerPool) UpdateTasks(
 
 // ExecuteTasks executes tasks for a specific workflow and execution id
 func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs []string) (map[string]TaskResult, map[string]error) {
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-wp.ctx.Done():
+			wp.cleanupExecution(execID)
+		case <-done:
+			// exit goroutine
+		}
+	}()
+
 	wp.mu.Lock()
 	if _, exists := wp.executions[execID]; exists {
 		wp.mu.Unlock()
@@ -160,13 +170,7 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 		}
 
 		// Queue task
-		select {
-		case wp.taskChan <- TaskContext{Task: &task, Ctx: &ctx}:
-		case <-wp.ctx.Done():
-			wp.cleanupExecution(execID)
-			return nil, map[string]error{execID: wp.ctx.Err()}
-		}
-
+		wp.taskChan <- TaskContext{Task: &task, Ctx: &ctx}
 	}
 
 	// Wait for completion
@@ -188,8 +192,6 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 		errors[k] = taskErr
 	}
 	state.mu.RUnlock()
-
-	wp.cleanupExecution(execID)
 	return results, errors
 }
 
@@ -223,12 +225,8 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		return
 	}
 	if !canRun {
-		select {
-		case wp.taskChan <- taskCtx:
-			wp.logger.Infof("Requeued task %s due to unready dependencies", taskCtx.Task.ID)
-		case <-wp.ctx.Done():
-			wp.logger.Infof("Skipped requeue of task %s due to context cancellation", taskCtx.Task.ID)
-		}
+		wp.taskChan <- taskCtx
+		wp.logger.Infof("Requeued task %s due to unready dependencies", taskCtx.Task.ID)
 		return
 	}
 
@@ -289,9 +287,6 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		timeout = &defaultTimeout
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), *timeout)
-	defer cancel()
-
 	resultCh := make(chan struct {
 		res TaskResult
 		err error
@@ -299,6 +294,8 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 
 	for attempt := 0; attempt <= task.Retries; attempt++ {
 		go func() {
+			timeoutCtx, cancel := context.WithTimeout(wp.ctx, *timeout)
+			defer cancel()
 			res, err := taskFn(timeoutCtx, args...)
 			select {
 			case resultCh <- struct {
@@ -306,59 +303,43 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 				err error
 			}{res, err}:
 			case <-timeoutCtx.Done():
+				resultCh <- struct {
+					res TaskResult
+					err error
+				}{nil, timeoutCtx.Err()}
 				// Context expired before result could be sent, drop result to avoid goroutine leak
 			}
 
 		}()
-		select {
-		case r := <-resultCh:
-			result, taskErr = r.res, r.err
-		case <-timeoutCtx.Done():
-			taskErr = timeoutCtx.Err()
-		}
+		r := <-resultCh
+		result, taskErr = r.res, r.err
 		if taskErr == nil {
 			break
 		}
 		task.Attempts++
 		task.ErrorMsg = taskErr.Error()
 		if attempt < task.Retries {
-			select {
-			case <-timeoutCtx.Done():
-				task.ErrorMsg = timeoutCtx.Err().Error()
-				break
 			// TODO this should be a linear or exponential backoff for I/O-heavy tasks
-			case <-time.After(100 * time.Millisecond):
-				// backoff
-				wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
-				continue
-			}
+			<-time.After(100 * time.Millisecond)
+			// backoff
+			wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
+			continue
 		}
 	}
 
-	select {
-	case <-timeoutCtx.Done():
-		// TODO this should be Warnf
-		wp.logger.Infof("Task %s failed due to timeout: %v", task.ID, timeoutCtx.Err())
-	default:
-		if taskErr != nil {
-			// TODO this should be Warnf
-			wp.logger.Infof("Task %s failed after %d attempts: %v", task.ID, task.Attempts, taskErr)
-		} else {
-			wp.logger.Infof("Task %s completed successfully", task.ID)
-		}
-	}
-
-	state.mu.Lock()
 	if taskErr != nil {
+		wp.logger.Infof("Task %s failed after %d attempts: %v", task.ID, task.Attempts, taskErr)
 		task.ErrorMsg = taskErr.Error()
+		state.mu.Lock()
 		state.taskErrors[task.ID] = taskErr
+		state.mu.Unlock()
 		if isTask {
 			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.FailedTaskStatus, taskErr.Error()); updateErr != nil {
 				wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
-				return
 			}
 		}
 	} else {
+		wp.logger.Infof("Task %s completed successfully", task.ID)
 		ctx.ResultsLock.Lock()
 		ctx.Results[task.ID] = result
 		ctx.ResultsLock.Unlock()
@@ -378,12 +359,10 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 			}
 		}
 	}
+	state.mu.Lock()
 	state.pendingCount--
-	if state.pendingCount == 0 || len(state.taskErrors) > 0 {
-		select {
-		case state.completeChan <- struct{}{}:
-		default:
-		}
+	if state.pendingCount == 0 {
+		wp.cleanupExecution(task.ExecutionID)
 	}
 	state.mu.Unlock()
 }
@@ -414,11 +393,8 @@ func (wp *WorkerPool) markTaskFailed(task models.Task, err error) {
 
 	state.mu.Lock()
 	state.pendingCount--
-	if state.pendingCount == 0 || len(state.taskErrors) > 0 {
-		select {
-		case state.completeChan <- struct{}{}:
-		default:
-		}
+	if state.pendingCount == 0 {
+		wp.cleanupExecution(task.ExecutionID)
 	}
 	state.mu.Unlock()
 }
@@ -427,7 +403,10 @@ func (wp *WorkerPool) cleanupExecution(execID string) {
 	wp.mu.Lock()
 	defer wp.mu.Unlock()
 	if state, ok := wp.executions[execID]; ok {
-		close(state.completeChan)
-		delete(wp.executions, execID)
+		state.cleanupOnce.Do(func() {
+			close(state.completeChan)
+			delete(wp.executions, execID)
+			wp.logger.Infof("Cleaned up execution: %s", execID)
+		})
 	}
 }

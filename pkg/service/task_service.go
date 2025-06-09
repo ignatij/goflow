@@ -24,10 +24,10 @@ func (ts *TaskService) CanRunTask(task models.Task) (bool, error) {
 		d, err := ts.store.GetTask(dep, task.WorkflowID)
 		if err != nil {
 			ts.logger.Errorf("Error retrieving dependency %s: %v", dep, err)
-			return false, fmt.Errorf("failed to retrie dependency %s: %v", dep, err)
+			return false, fmt.Errorf("failed to retrieve dependency %s: %v", dep, err)
 		}
-		if d.Status != models.CompletedTaskStatus {
-			ts.logger.Infof("Cannot run task %s as dependency %s is not in status COMPLETED", task.Name, dep)
+		if d.Status != models.CompletedTaskStatus && d.Status != models.FailedTaskStatus {
+			ts.logger.Infof("Cannot run task %s as dependency %s is not in status COMPLETED or FAILED", task.Name, dep)
 			return false, nil
 		}
 	}
