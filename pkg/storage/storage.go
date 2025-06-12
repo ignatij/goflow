@@ -26,6 +26,8 @@ type Store interface {
 	GetTask(id string, workflowID int64) (models.Task, error)
 	// UpdateTaskStatus updates a task status by its ID.
 	UpdateTaskStatus(id string, workflowID int64, status models.TaskStatus, errorMsg string) error
+	// UpdateTaskAttempts updates a task's number of attempts.
+	UpdateTaskAttempts(id string, workflowID int64, attempts int) error
 
 	// Begin starts a new transaction.
 	Begin() (Store, error)

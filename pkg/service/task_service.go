@@ -27,7 +27,7 @@ func (ts *TaskService) CanRunTask(task models.Task) (bool, error) {
 			return false, fmt.Errorf("failed to retrieve dependency %s: %v", dep, err)
 		}
 		if d.Status != models.CompletedTaskStatus && d.Status != models.FailedTaskStatus {
-			ts.logger.Infof("Cannot run task %s as dependency %s is not in status COMPLETED or FAILED", task.Name, dep)
+			// ts.logger.Infof("Cannot run task %s as dependency %s is not in status COMPLETED or FAILED", task.Name, dep)
 			return false, nil
 		}
 	}
@@ -82,6 +82,32 @@ func (ts *TaskService) UpdateTaskStatus(taskID string, workflowID int64, status 
 	if err = txStore.UpdateTaskStatus(taskID, workflowID, status, errMsg); err != nil {
 		ts.logger.Errorf("Failed to update task %s status to %s: %v", taskID, status, err)
 		return fmt.Errorf("failed to update task %s status: %v", taskID, err)
+	}
+	return nil
+}
+
+func (ts *TaskService) UpdateTaskAttempts(taskID string, workflowID int64, attempts int) (err error) {
+	txStore, err := ts.store.Begin()
+	if err != nil {
+		ts.logger.Errorf("Failed to begin transaction for UpdateTaskStatus: %v", err)
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer func() {
+		if err != nil {
+			if rollbackErr := txStore.Rollback(); rollbackErr != nil {
+				ts.logger.Errorf("Failed to rollback: %v", rollbackErr)
+			}
+		} else {
+			if commitErr := txStore.Commit(); commitErr != nil {
+				ts.logger.Errorf("Failed to commit: %v", commitErr)
+				err = commitErr
+			}
+		}
+	}()
+
+	if err = txStore.UpdateTaskAttempts(taskID, workflowID, attempts); err != nil {
+		ts.logger.Errorf("Failed to update task %s attempts to %d: %v", taskID, attempts, err)
+		return fmt.Errorf("failed to update task %s attempts: %v", taskID, err)
 	}
 	return nil
 }
