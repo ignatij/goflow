@@ -32,8 +32,9 @@ type WorkflowContext struct {
 }
 
 type TaskContext struct {
-	Task *models.Task
-	Ctx  *WorkflowContext
+	Task        *models.Task
+	WorkflowCtx *WorkflowContext
+	Ctx         context.Context
 }
 
 // WorkerPool manages parallel task execution with dependency enforcement
@@ -99,18 +100,43 @@ func (wp *WorkerPool) UpdateTasks(
 	wp.taskConfigs = taskCfgs
 }
 
+// handleContextCancellation handles the cancellation of tasks when either the task context or worker pool context is cancelled
+func (wp *WorkerPool) handleContextCancellation(execID string, taskIDs []string, workflowCtx WorkflowContext, err error) {
+	wp.logger.Infof("Context cancelled for execution %s: %v", execID, err)
+
+	// Get task types first to avoid nested locks
+	taskTypes := make(map[string]bool)
+	wp.mu.RLock()
+	for _, taskID := range taskIDs {
+		taskTypes[taskID] = wp.taskTypes[taskID] == "task"
+	}
+	wp.mu.RUnlock()
+
+	// Mark all pending tasks as failed
+	for taskID, isTask := range taskTypes {
+		if isTask {
+			if updateErr := wp.taskService.UpdateTaskStatus(taskID, workflowCtx.WorkflowID, models.FailedTaskStatus, err.Error()); updateErr != nil {
+				wp.logger.Errorf("Failed to update task %s status to FAILED: %v", taskID, updateErr)
+			}
+		}
+	}
+
+	// Store the cancellation error in the state
+	wp.mu.RLock()
+	state, ok := wp.executions[execID]
+	wp.mu.RUnlock()
+	if ok {
+		state.mu.Lock()
+		state.taskErrors[execID] = err
+		state.mu.Unlock()
+	}
+	wp.cleanupExecution(execID)
+}
+
 // ExecuteTasks executes tasks for a specific workflow and execution id
-func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs []string) (map[string]TaskResult, map[string]error) {
+func (wp *WorkerPool) ExecuteTasks(ctx context.Context, execID string, workflowCtx WorkflowContext, taskIDs []string) (map[string]TaskResult, map[string]error) {
 	done := make(chan struct{})
 	defer close(done)
-	go func() {
-		select {
-		case <-wp.ctx.Done():
-			wp.cleanupExecution(execID)
-		case <-done:
-			// exit goroutine
-		}
-	}()
 
 	wp.mu.Lock()
 	if _, exists := wp.executions[execID]; exists {
@@ -126,6 +152,18 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 	}
 	wp.executions[execID] = state
 	wp.mu.Unlock()
+
+	// Monitor context cancellation
+	go func() {
+		select {
+		case <-ctx.Done():
+			wp.handleContextCancellation(execID, taskIDs, workflowCtx, ctx.Err())
+		case <-wp.ctx.Done():
+			wp.handleContextCancellation(execID, taskIDs, workflowCtx, wp.ctx.Err())
+		case <-done:
+			// exit goroutine
+		}
+	}()
 
 	// queue tasks
 	for _, taskID := range taskIDs {
@@ -152,7 +190,7 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 
 		task := models.Task{
 			ID:           taskID,
-			WorkflowID:   ctx.WorkflowID,
+			WorkflowID:   workflowCtx.WorkflowID,
 			Name:         taskID,
 			Status:       models.PendingTaskStatus,
 			ExecutionID:  execID,
@@ -170,20 +208,15 @@ func (wp *WorkerPool) ExecuteTasks(execID string, ctx WorkflowContext, taskIDs [
 		}
 
 		// Queue task
-		wp.taskChan <- TaskContext{Task: &task, Ctx: &ctx}
+		wp.taskChan <- TaskContext{Task: &task, WorkflowCtx: &workflowCtx, Ctx: ctx}
 	}
 
 	// Wait for completion
-	select {
-	case <-state.completeChan:
-	// default timeout of 60 minutes, should rethink this
-	case <-time.After(60 * time.Minute):
-		wp.cleanupExecution(execID)
-		return nil, map[string]error{execID: fmt.Errorf("execution timed out")}
-	}
+	<-state.completeChan
+
 	state.mu.RLock()
-	results := make(map[string]TaskResult, len(ctx.Results))
-	for k, taskResult := range ctx.Results {
+	results := make(map[string]TaskResult, len(workflowCtx.Results))
+	for k, taskResult := range workflowCtx.Results {
 		results[k] = taskResult
 	}
 
@@ -218,15 +251,16 @@ func (wp *WorkerPool) canRunTask(task models.Task) (bool, error) {
 func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 	// check if task can run
 	task := *taskCtx.Task
-	ctx := *taskCtx.Ctx
-	canRun, err := wp.canRunTask(*taskCtx.Task)
+	workflowCtx := *taskCtx.WorkflowCtx
+	ctx := taskCtx.Ctx
+	canRun, err := wp.canRunTask(task)
 	if err != nil {
 		wp.markTaskFailed(*taskCtx.Task, err)
 		return
 	}
 	if !canRun {
 		wp.taskChan <- taskCtx
-		wp.logger.Infof("Requeued task %s due to unready dependencies", taskCtx.Task.ID)
+		// wp.logger.Infof("Requeued task %s due to unready dependencies", taskCtx.Task.ID)
 		return
 	}
 
@@ -252,9 +286,9 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 
 	args := make([]TaskResult, len(task.Dependencies))
 	for i, dependency := range task.Dependencies {
-		ctx.ResultsLock.RLock()
-		res, ok := ctx.Results[dependency]
-		ctx.ResultsLock.RUnlock()
+		workflowCtx.ResultsLock.RLock()
+		res, ok := workflowCtx.Results[dependency]
+		workflowCtx.ResultsLock.RUnlock()
 		if !ok {
 			err := fmt.Errorf("result for dependency %s not found", dependency)
 			wp.logger.Errorf("Error retrieving dependency result: %v", err)
@@ -292,39 +326,81 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		err error
 	}, 1)
 
+	// Create a context that is cancelled when either the task context or worker pool context is cancelled
+	execCtx, cancel := context.WithCancel(ctx)
+	// Monitor both contexts
+	go func() {
+		select {
+		case <-execCtx.Done():
+			wp.logger.Infof("Task %s execution context done", task.ID)
+			cancel()
+		case <-wp.ctx.Done():
+			wp.logger.Infof("Worker pool context done for task %s", task.ID)
+			cancel() // Cancel the execution context
+		}
+	}()
+
+	// Function to update task status
+	updateTaskStatus := func(status models.TaskStatus, errMsg string) {
+		if isTask {
+			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, status, errMsg); updateErr != nil {
+				wp.logger.Errorf("Failed to update task %s status to %s: %v", task.ID, status, updateErr)
+			}
+		}
+	}
+
+	// Function to update task attempts
+	updateTaskAttempts := func(attempts int) {
+		if isTask {
+			if updateErr := wp.taskService.UpdateTaskAttempts(task.ID, task.WorkflowID, attempts); updateErr != nil {
+				wp.logger.Errorf("Failed to update task %s attempts to %d: %v", task.ID, attempts, updateErr)
+			}
+		}
+	}
+
 	for attempt := 0; attempt <= task.Retries; attempt++ {
+		wp.logger.Infof("Starting task %s attempt %d", task.ID, attempt+1)
+
+		// Create a timeout context for this attempt
+		timeoutCtx, timeoutCancel := context.WithTimeout(execCtx, *timeout)
+
+		// Execute the task in a goroutine
 		go func() {
-			timeoutCtx, cancel := context.WithTimeout(wp.ctx, *timeout)
-			defer cancel()
+			defer timeoutCancel()
+			updateTaskAttempts(attempt + 1)
 			res, err := taskFn(timeoutCtx, args...)
-			select {
-			case resultCh <- struct {
+			resultCh <- struct {
 				res TaskResult
 				err error
-			}{res, err}:
-			case <-timeoutCtx.Done():
-				resultCh <- struct {
-					res TaskResult
-					err error
-				}{nil, timeoutCtx.Err()}
-				// Context expired before result could be sent, drop result to avoid goroutine leak
-			}
-
+			}{res, err}
 		}()
-		r := <-resultCh
-		result, taskErr = r.res, r.err
-		if taskErr == nil {
+
+		// Wait for either the result or context cancellation
+		select {
+		case r := <-resultCh:
+			result, taskErr = r.res, r.err
+			wp.logger.Infof("Task %s received result: %v, error: %v", task.ID, result, taskErr)
+			if taskErr == nil {
+				break
+			}
+			if taskErr == context.Canceled || taskErr == context.DeadlineExceeded {
+				wp.logger.Infof("Task %s cancelled or timed out, not retrying", task.ID)
+				updateTaskStatus(models.FailedTaskStatus, taskErr.Error())
+				break
+			}
+			task.ErrorMsg = taskErr.Error()
+			if attempt < task.Retries {
+				wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
+				<-time.After(100 * time.Millisecond)
+				continue
+			}
+		case <-timeoutCtx.Done():
+			taskErr = timeoutCtx.Err()
+			wp.logger.Infof("Task %s timeout reached: %v", task.ID, taskErr)
+			updateTaskStatus(models.FailedTaskStatus, taskErr.Error())
 			break
 		}
-		task.Attempts++
-		task.ErrorMsg = taskErr.Error()
-		if attempt < task.Retries {
-			// TODO this should be a linear or exponential backoff for I/O-heavy tasks
-			<-time.After(100 * time.Millisecond)
-			// backoff
-			wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
-			continue
-		}
+		break
 	}
 
 	if taskErr != nil {
@@ -333,23 +409,16 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		state.mu.Lock()
 		state.taskErrors[task.ID] = taskErr
 		state.mu.Unlock()
-		if isTask {
-			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.FailedTaskStatus, taskErr.Error()); updateErr != nil {
-				wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
-			}
-		}
+		updateTaskStatus(models.FailedTaskStatus, taskErr.Error())
 	} else {
 		wp.logger.Infof("Task %s completed successfully", task.ID)
-		ctx.ResultsLock.Lock()
-		ctx.Results[task.ID] = result
-		ctx.ResultsLock.Unlock()
+		workflowCtx.ResultsLock.Lock()
+		workflowCtx.Results[task.ID] = result
+		workflowCtx.ResultsLock.Unlock()
+
+		updateTaskStatus(models.CompletedTaskStatus, "")
 
 		if isTask {
-			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.CompletedTaskStatus, ""); updateErr != nil {
-				wp.logger.Errorf("Failed to update task %s status to COMPLETED: %v", task.ID, updateErr)
-				return
-			}
-
 			task.Status = models.CompletedTaskStatus
 			finishedAt := time.Now()
 			task.FinishedAt = &finishedAt
@@ -359,12 +428,20 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 			}
 		}
 	}
+
+	wp.logger.Infof("Task %s cleanup starting", task.ID)
 	state.mu.Lock()
 	state.pendingCount--
 	if state.pendingCount == 0 {
+		wp.logger.Infof("Task %s is last pending task, cleaning up execution", task.ID)
 		wp.cleanupExecution(task.ExecutionID)
 	}
 	state.mu.Unlock()
+	wp.logger.Infof("Task %s cleanup completed", task.ID)
+
+	// Cancel the context only after we're completely done with the task
+	cancel()
+	wp.logger.Infof("Task %s execution context cancelled", task.ID)
 }
 
 func (wp *WorkerPool) markTaskFailed(task models.Task, err error) {
@@ -386,7 +463,7 @@ func (wp *WorkerPool) markTaskFailed(task models.Task, err error) {
 	state.mu.Unlock()
 
 	if isTask {
-		if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, "FAILED", err.Error()); updateErr != nil {
+		if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.FailedTaskStatus, err.Error()); updateErr != nil {
 			wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
 		}
 	}

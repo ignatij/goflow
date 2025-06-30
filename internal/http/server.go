@@ -258,7 +258,7 @@ func getWorkflowHTTP(w http.ResponseWriter, r *http.Request, svc *service.Workfl
 func executeFlowHTTP(w http.ResponseWriter, r *http.Request, svc *service.WorkflowService, workflowID int64, flowName string) {
 	// lint issue
 	_ = r
-	result, err := svc.ExecuteFlow(workflowID, flowName)
+	result, err := svc.ExecuteFlow(r.Context(), workflowID, flowName)
 	if err != nil {
 		log.GetLogger().Errorf("Failed to execute flow '%s' for workflow %d: %v", flowName, workflowID, err)
 		w.Header().Set("Content-Type", "application/json")

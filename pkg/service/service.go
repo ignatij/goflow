@@ -159,7 +159,7 @@ func validateTaskFunc(fn ContextTaskFunc) error {
 }
 
 // ExecuteFlow runs a flow for a given workflow
-func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskResult, error) {
+func (s *WorkflowService) ExecuteFlow(ctx context.Context, workflowID int64, flowName string) (TaskResult, error) {
 	txStore, err := s.store.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %v", err)
@@ -198,21 +198,22 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 		}
 		return nil, err
 	}
-	// // Initialize results map for this workflow
+
+	// Initialize results map for this workflow
 	s.mu.Lock()
 	if _, ok := s.results[workflowID]; !ok {
 		s.results[workflowID] = make(map[string]TaskResult)
 	}
 	s.mu.Unlock()
 
-	// // Execute tasks and flows using WorkerPool
+	// Execute tasks and flows using WorkerPool
 	execID := fmt.Sprintf("exec-%d-%s", workflowID, flowName)
 	workflowCtx := WorkflowContext{
 		WorkflowID:  workflowID,
 		Results:     s.results[workflowID],
 		ResultsLock: &sync.RWMutex{},
 	}
-	results, errs := s.wp.ExecuteTasks(execID, workflowCtx, order)
+	results, errs := s.wp.ExecuteTasks(ctx, execID, workflowCtx, order)
 
 	// store results
 	s.mu.Lock()
@@ -232,12 +233,12 @@ func (s *WorkflowService) ExecuteFlow(workflowID int64, flowName string) (TaskRe
 		return nil, fmt.Errorf("execution of flow '%s' failed: %s", flowName, strings.Join(combinedErrs, "; "))
 	}
 
-	// // Mark workflow as completed
+	// Mark workflow as completed
 	if err := txStore.UpdateWorkflowStatus(workflowID, models.CompletedWorkflowStatus); err != nil {
 		return nil, fmt.Errorf("failed to set workflow %d to COMPLETED: %v", workflowID, err)
 	}
 
-	// // Return result
+	// Return result
 	s.mu.RLock()
 	result, ok := s.results[workflowID][flowName]
 	s.mu.RUnlock()

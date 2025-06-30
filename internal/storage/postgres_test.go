@@ -467,4 +467,35 @@ func TestPostgresStore(t *testing.T) {
 		assert.Equal(t, task.ExecutionID, updated.ExecutionID)
 		assert.Equal(t, task.Dependencies, updated.Dependencies)
 	})
+
+	// Test UpdateTaskAttempts
+	t.Run("UpdateTaskAttempts", func(t *testing.T) {
+		store := newTxStore(t)
+		wfID, err := store.SaveWorkflow(models.Workflow{
+			Name:      "UpdateTaskTest",
+			Status:    "PENDING",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+		assert.NoError(t, err)
+
+		task := models.Task{
+			ID:           "t1",
+			WorkflowID:   wfID,
+			Name:         "Task1",
+			Status:       "PENDING",
+			ExecutionID:  "wf1:flow1",
+			Dependencies: []string{"t0"},
+			Attempts:     0,
+		}
+		err = store.SaveTask(task)
+		assert.NoError(t, err)
+
+		err = store.UpdateTaskAttempts("t1", wfID, 1)
+		assert.NoError(t, err)
+
+		updated, err := store.GetTask("t1", wfID)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, updated.Attempts)
+	})
 }

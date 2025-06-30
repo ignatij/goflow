@@ -248,3 +248,13 @@ func (s *PostgresStore) UpdateTaskStatus(id string, workflowID int64, status mod
 		status, errorMsg, status, id, workflowID)
 	return err
 }
+
+// UpdatesTaskAttempts updates a task's number of attempts
+func (s *PostgresStore) UpdateTaskAttempts(id string, workflowID int64, attempts int) error {
+	_, err := s.db.Exec(`
+		UPDATE tasks 
+		SET attempts = $1
+		WHERE id = $2 AND workflow_id = $3`,
+		attempts, id, workflowID)
+	return err
+}

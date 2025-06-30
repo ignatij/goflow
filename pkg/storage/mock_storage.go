@@ -138,6 +138,23 @@ func (m *mockStore) UpdateTaskStatus(id string, workflowID int64, status models.
 	return ErrNotFound
 }
 
+// UpdateTaskAttempts updates a task's attempts number
+func (m *mockStore) UpdateTaskAttempts(id string, workflowID int64, attempts int) error {
+	m.mu.Lock()
+	tasks := m.tasks[workflowID]
+	for i, t := range tasks {
+		if t.ID == id && t.WorkflowID == workflowID {
+			t.Attempts = attempts
+			tasks[i] = t
+			m.tasks[workflowID] = tasks
+			m.mu.Unlock()
+			return nil
+		}
+	}
+	m.mu.Unlock()
+	return ErrNotFound
+}
+
 // SaveDependency and GetDependencies are no-ops
 func (m *mockStore) SaveDependency(d models.Dependency) error { return nil }
 func (m *mockStore) GetDependencies(workflowID int64) ([]models.Dependency, error) {
