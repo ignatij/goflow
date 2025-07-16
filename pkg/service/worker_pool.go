@@ -383,11 +383,6 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 			if taskErr == nil {
 				break
 			}
-			if taskErr == context.Canceled || taskErr == context.DeadlineExceeded {
-				wp.logger.Infof("Task %s cancelled or timed out, not retrying", task.ID)
-				updateTaskStatus(models.FailedTaskStatus, taskErr.Error())
-				break
-			}
 			task.ErrorMsg = taskErr.Error()
 			if attempt < task.Retries {
 				wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
@@ -398,13 +393,17 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 			taskErr = timeoutCtx.Err()
 			wp.logger.Infof("Task %s timeout reached: %v", task.ID, taskErr)
 			updateTaskStatus(models.FailedTaskStatus, taskErr.Error())
-			break
+			if attempt < task.Retries {
+				wp.logger.Infof("Retrying task %s due to timeout (attempt %d/%d)", task.ID, attempt+1, task.Retries)
+				<-time.After(100 * time.Millisecond)
+				continue
+			}
 		}
 		break
 	}
 
 	if taskErr != nil {
-		wp.logger.Infof("Task %s failed after %d attempts: %v", task.ID, task.Attempts, taskErr)
+		wp.logger.Infof("Task %s failed after %d retries: %v", task.ID, task.Retries, taskErr)
 		task.ErrorMsg = taskErr.Error()
 		state.mu.Lock()
 		state.taskErrors[task.ID] = taskErr
