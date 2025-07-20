@@ -97,7 +97,7 @@ jobs:
         run: make deps
 
       - name: Run tests
-        run: make test
+        run: go test -race -count=1 -shuffle=on ./...
 
       - name: Run linting
         run: make lint
