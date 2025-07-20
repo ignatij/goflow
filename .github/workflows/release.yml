@@ -1,0 +1,202 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  # Job to determine if we should create a release
+  determine-release:
+    runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.check.outputs.should-release }}
+      version: ${{ steps.version.outputs.version }}
+      next-version: ${{ steps.version.outputs.next-version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if release is needed
+        id: check
+        run: |
+          # Check if this is a tag push (manual release)
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if we have conventional commits since last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          COMMITS=$(git log --pretty=format:"%s" "$LAST_TAG"..HEAD)
+          
+          HAS_RELEASABLE_COMMITS=false
+          while IFS= read -r commit; do
+            if [[ "$commit" =~ ^(feat|fix|chore)(\(.+\))?:.* ]]; then
+              HAS_RELEASABLE_COMMITS=true
+              break
+            fi
+          done <<< "$COMMITS"
+          
+          if [ "$HAS_RELEASABLE_COMMITS" = true ]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            # Extract version from tag
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "next-version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            # Calculate next version based on commits
+            chmod +x scripts/version.sh
+            CURRENT_VERSION=$(./scripts/version.sh version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
+            NEXT_VERSION=$(./scripts/version.sh next | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | tail -1)
+            
+            echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            echo "next-version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          fi
+
+  # Job to create release
+  create-release:
+    needs: determine-release
+    if: needs.determine-release.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: make deps
+
+      - name: Run tests
+        run: make test
+
+      - name: Run linting
+        run: make lint
+
+      - name: Run vet
+        run: make vet
+
+      - name: Build binary
+        run: make build
+
+      - name: Prepare release
+        id: prepare
+        run: |
+          chmod +x scripts/version.sh
+          
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            # Manual release from tag
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            # Automated release
+            VERSION=${{ needs.determine-release.outputs.next-version }}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            
+            # Update version files
+            ./scripts/version.sh bump
+            
+            # Create and push tag
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add VERSION CHANGELOG.md go.mod
+            git commit -m "chore: release version $VERSION"
+            git tag -a "v$VERSION" -m "Release v$VERSION"
+            git push origin main
+            git push origin "v$VERSION"
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [[ $GITHUB_REF != refs/tags/* ]]; then
+            # Generate changelog for automated releases
+            chmod +x scripts/version.sh
+            ./scripts/version.sh bump
+          fi
+          
+          # Read changelog
+          if [ -f "CHANGELOG.md" ]; then
+            # Extract the latest release notes
+            CHANGELOG=$(awk '/^## \[/ {p=1; next} /^## \[/ {p=0} p' CHANGELOG.md | head -n -1)
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            echo "$CHANGELOG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "changelog=No changelog available" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.prepare.outputs.version }}
+          release_name: Release v${{ steps.prepare.outputs.version }}
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ## Installation
+            
+            ```bash
+            go get github.com/ignatij/goflow@v${{ steps.prepare.outputs.version }}
+            ```
+            
+            ## What's Changed
+            
+            ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create-release.outputs.upload_url }}
+          asset_path: ./goflow
+          asset_name: goflow-${{ steps.prepare.outputs.version }}-linux-amd64
+          asset_content_type: application/octet-stream
+
+  # Job to publish to Go module proxy
+  publish-module:
+    needs: create-release
+    if: needs.determine-release.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Publish module
+        run: |
+          # The module will be automatically published to the Go module proxy
+          # when a tag is pushed to the repository
+          echo "Module will be published to proxy.golang.org"
+          echo "Tag: v${{ needs.determine-release.outputs.next-version }}" 

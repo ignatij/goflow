@@ -297,6 +297,33 @@ make lint
 make fmt
 ```
 
+### Version Management
+
+GoFlow uses semantic versioning with automated releases. The versioning system automatically determines the next version based on conventional commits:
+
+```bash
+# Show current version
+make version
+
+# Show next version based on commits
+make version-next
+
+# Bump version (updates files but doesn't create tag)
+make version-bump
+
+# Release version (bump, tag, and push)
+make version-release
+```
+
+**Commit Types:**
+- `feat:` - New features (minor version bump)
+- `fix:` - Bug fixes (patch version bump)
+- `chore:` - Maintenance tasks (patch version bump)
+- `BREAKING CHANGE:` - Breaking changes (major version bump)
+- `docs:`, `style:`, `refactor:`, `perf:`, `test:` - No version bump
+
+For detailed information about the versioning system, see [VERSIONING.md](docs/VERSIONING.md).
+
 ### Available Make Targets
 
 ```bash
@@ -310,9 +337,14 @@ make help  # Show all available targets
 | `test` | Run all tests |
 | `lint` | Run linter |
 | `fmt` | Format code |
+| `vet` | Run go vet |
 | `init_db` | Start and migrate local database |
 | `start` | Start the application |
 | `build_docker` | Build Docker image |
+| `version` | Show current version |
+| `version-next` | Show next version based on commits |
+| `version-bump` | Bump version based on commits |
+| `version-release` | Release version (bump, tag, push) |
 
 ## 📡 API Reference
 

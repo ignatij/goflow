@@ -79,7 +79,7 @@ make integration_tests
 
 ### 3. Commit Your Changes
 
-Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification. This is **critical** for automated versioning:
 
 ```bash
 # Examples of good commit messages:
@@ -88,16 +88,22 @@ git commit -m "fix: resolve race condition in worker pool"
 git commit -m "docs: update README with library usage examples"
 git commit -m "test: add unit tests for task timeout handling"
 git commit -m "refactor: simplify workflow execution logic"
+git commit -m "feat!: breaking change in API interface"
 ```
 
-**Commit Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, etc.)
-- `refactor`: Code refactoring
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
+**Commit Types and Version Impact:**
+- `feat`: New feature (minor version bump)
+- `fix`: Bug fix (patch version bump)
+- `chore`: Maintenance tasks (patch version bump)
+- `docs`: Documentation changes (no version bump)
+- `style`: Code style changes (no version bump)
+- `refactor`: Code refactoring (no version bump)
+- `test`: Adding or updating tests (no version bump)
+
+**Breaking Changes:**
+- Use `!` after the type: `feat!: breaking change`
+- Or include `BREAKING CHANGE:` in the commit body
+- This triggers a major version bump
 
 ### 4. Push and Create a Pull Request
 
@@ -347,21 +353,55 @@ Closes #[issue number]
 
 ## 🏷️ Release Process
 
-### Versioning
+### Automated Versioning
 
-We follow [Semantic Versioning](https://semver.org/) (SemVer):
+GoFlow uses automated semantic versioning based on conventional commits. The system automatically:
 
-- **MAJOR**: Breaking changes
-- **MINOR**: New features (backward compatible)
-- **PATCH**: Bug fixes (backward compatible)
+1. **Analyzes commits** since the last release
+2. **Determines version bump** based on commit types:
+   - `feat:` → Minor version bump
+   - `fix:` → Patch version bump
+   - `BREAKING CHANGE:` → Major version bump
+3. **Updates version files** (VERSION, go.mod, CHANGELOG.md)
+4. **Creates git tags** and GitHub releases
+5. **Publishes to Go module proxy**
+
+### Manual Release Process
+
+For manual releases or when you want to control the release timing:
+
+```bash
+# Check current version
+make version
+
+# See what the next version would be
+make version-next
+
+# Bump version (updates files only)
+make version-bump
+
+# Create release (bump, tag, push)
+make version-release
+```
 
 ### Release Checklist
 
-- [ ] All tests pass
+- [ ] All tests pass (`make test`)
+- [ ] Code is linted (`make lint`)
+- [ ] Code is vetted (`make vet`)
 - [ ] Documentation is up to date
-- [ ] CHANGELOG.md is updated
-- [ ] Version is tagged
-- [ ] Release notes are written
+- [ ] Conventional commits are used
+- [ ] Version files are updated
+- [ ] Git tag is created
+- [ ] GitHub release is created
+
+### Versioning Rules
+
+We follow [Semantic Versioning](https://semver.org/) (SemVer):
+
+- **MAJOR** (X.0.0): Breaking changes
+- **MINOR** (0.X.0): New features (backward compatible)
+- **PATCH** (0.0.X): Bug fixes (backward compatible)
 
 ## 🤝 Community Guidelines
 
