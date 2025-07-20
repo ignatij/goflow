@@ -32,8 +32,17 @@ jobs:
           fi
           
           # Check if we have conventional commits since last tag
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          COMMITS=$(git log --pretty=format:"%s" "$LAST_TAG"..HEAD)
+          LAST_TAG=""
+          if git describe --tags --abbrev=0 2>/dev/null; then
+            LAST_TAG=$(git describe --tags --abbrev=0)
+          fi
+          
+          COMMITS=""
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"%s" "$LAST_TAG"..HEAD)
+          else
+            COMMITS=$(git log --pretty=format:"%s")
+          fi
           
           HAS_RELEASABLE_COMMITS=false
           while IFS= read -r commit; do
