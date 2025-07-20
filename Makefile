@@ -82,6 +82,22 @@ unit_tests: ## 🧪 Run unit tests
 e2e_tests: ## 🧪 Run e2e tests
 	sh scripts/e2e-tests.sh
 
+.PHONY: version
+version: ## 📋 Show current version
+	@./scripts/version.sh version
+
+.PHONY: version-next
+version-next: ## 🔮 Show next version based on commits
+	@./scripts/version.sh next
+
+.PHONY: version-bump
+version-bump: ## ⬆️ Bump version based on commits
+	@./scripts/version.sh bump
+
+.PHONY: version-release
+version-release: ## 🚀 Release version (bump, tag, push)
+	@./scripts/version.sh release
+
 .PHONY: help
 help: ## 🤔 Show help messages for make targets
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

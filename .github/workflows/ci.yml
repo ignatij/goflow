@@ -20,10 +20,7 @@ jobs:
           go-version: '1.24' 
 
       - name: Install dependencies
-        run: |
-          go mod download
-          #go install golang.org/x/lint/golangci-lint@v1.61.0
-          #go install github.com/joho/godotenv/cmd/godotenv@latest  # For test target
+        run: make deps
 
       - name: Format code
         run: make fmt
@@ -39,9 +36,18 @@ jobs:
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_NAME: ${{ secrets.DB_NAME }}
-        run: |
-          # go run cmd/goflow-migrate/main.go migrate --db "postgres://testuser:testpass@localhost:5433/goflow_test?sslmode=disable"
-          go test -race -count=1 -shuffle=on ./...
+        run: make test
+
+      - name: Build
+        run: make build
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
   
   migrate_dev:
     if: github.ref == 'refs/heads/main'
