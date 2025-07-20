@@ -138,6 +138,9 @@ func TestWorkerPool_TaskExecution(t *testing.T) {
 			)
 			wp.Start(1)
 
+			// Cleanup worker pool at the end of the test
+			defer wp.Stop()
+
 			// Create task config
 			taskConfig := &models.TaskConfig{
 				Timeout: &tt.timeout,
@@ -272,6 +275,9 @@ func TestWorkerPool_DependentTasks(t *testing.T) {
 	wp.UpdateTasks(tasks, taskDeps, taskTypes, map[string]*models.TaskConfig{})
 	wp.Start(1)
 
+	// Cleanup worker pool at the end of the test
+	defer wp.Stop()
+
 	// Create workflow context
 	workflowCtx := service.WorkflowContext{
 		WorkflowID:  1,
@@ -319,6 +325,9 @@ func TestWorkerPool_DependentTasks(t *testing.T) {
 
 	// Execute tasks
 	_, errors := wp.ExecuteTasks(execCtx, execID, workflowCtx, []string{"slow", "pipeline"})
+
+	// Give some time for database updates to complete
+	time.Sleep(100 * time.Millisecond)
 
 	// Verify results
 	if len(errors) == 0 {

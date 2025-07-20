@@ -85,6 +85,22 @@ func (wp *WorkerPool) Start(workers int) {
 	}
 }
 
+// Stop gracefully stops the worker pool
+func (wp *WorkerPool) Stop() {
+	// Close the task channel to stop accepting new tasks
+	close(wp.taskChan)
+
+	// Wait for all workers to finish
+	wp.wg.Wait()
+
+	// Clean up any remaining executions
+	wp.mu.Lock()
+	for execID := range wp.executions {
+		wp.cleanupExecution(execID)
+	}
+	wp.mu.Unlock()
+}
+
 // UpdateTasks updates the tasks and dependencies
 func (wp *WorkerPool) UpdateTasks(
 	tasks map[string]ContextTaskFunc,
@@ -112,13 +128,18 @@ func (wp *WorkerPool) handleContextCancellation(execID string, taskIDs []string,
 	}
 	wp.mu.RUnlock()
 
-	// Mark all pending tasks as failed
+	// Mark all pending tasks as failed and store error results
 	for taskID, isTask := range taskTypes {
 		if isTask {
 			if updateErr := wp.taskService.UpdateTaskStatus(taskID, workflowCtx.WorkflowID, models.FailedTaskStatus, err.Error()); updateErr != nil {
 				wp.logger.Errorf("Failed to update task %s status to FAILED: %v", taskID, updateErr)
 			}
 		}
+
+		// Store error result so dependent tasks can access it
+		workflowCtx.ResultsLock.Lock()
+		workflowCtx.Results[taskID] = TaskResult(fmt.Sprintf("ERROR: %v", err))
+		workflowCtx.ResultsLock.Unlock()
 	}
 
 	// Store the cancellation error in the state
@@ -215,16 +236,20 @@ func (wp *WorkerPool) ExecuteTasks(ctx context.Context, execID string, workflowC
 	<-state.completeChan
 
 	state.mu.RLock()
-	results := make(map[string]TaskResult, len(workflowCtx.Results))
-	for k, taskResult := range workflowCtx.Results {
-		results[k] = taskResult
-	}
-
 	errors := make(map[string]error, len(state.taskErrors))
 	for k, taskErr := range state.taskErrors {
 		errors[k] = taskErr
 	}
 	state.mu.RUnlock()
+
+	// Copy results with proper synchronization
+	workflowCtx.ResultsLock.RLock()
+	results := make(map[string]TaskResult, len(workflowCtx.Results))
+	for k, taskResult := range workflowCtx.Results {
+		results[k] = taskResult
+	}
+	workflowCtx.ResultsLock.RUnlock()
+
 	return results, errors
 }
 
@@ -255,7 +280,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 	ctx := taskCtx.Ctx
 	canRun, err := wp.canRunTask(task)
 	if err != nil {
-		wp.markTaskFailed(*taskCtx.Task, err)
+		wp.markTaskFailed(*taskCtx.Task, err, &workflowCtx)
 		return
 	}
 	if !canRun {
@@ -270,6 +295,8 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 	wp.mu.RUnlock()
 	if !ok {
 		wp.logger.Errorf("Error executing task with id %s: Unknown execution with id: %s", task.ID, task.ExecutionID)
+		// Mark task as failed since execution was cleaned up (likely due to context cancellation)
+		wp.markTaskFailed(task, fmt.Errorf("execution %s not found", task.ExecutionID), &workflowCtx)
 		return
 	}
 
@@ -280,7 +307,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 	if !ok {
 		err := fmt.Errorf("task function %s not found", task.ID)
 		wp.logger.Errorf("Error retrieving task function: %v", err)
-		wp.markTaskFailed(task, err)
+		wp.markTaskFailed(task, err, &workflowCtx)
 		return
 	}
 
@@ -292,7 +319,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		if !ok {
 			err := fmt.Errorf("result for dependency %s not found", dependency)
 			wp.logger.Errorf("Error retrieving dependency result: %v", err)
-			wp.markTaskFailed(task, err)
+			wp.markTaskFailed(task, err, &workflowCtx)
 			return
 		}
 		args[i] = res
@@ -409,6 +436,11 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		state.taskErrors[task.ID] = taskErr
 		state.mu.Unlock()
 		updateTaskStatus(models.FailedTaskStatus, taskErr.Error())
+
+		// Store error result so dependent tasks can access it
+		workflowCtx.ResultsLock.Lock()
+		workflowCtx.Results[task.ID] = TaskResult(fmt.Sprintf("ERROR: %v", taskErr))
+		workflowCtx.ResultsLock.Unlock()
 	} else {
 		wp.logger.Infof("Task %s completed successfully", task.ID)
 		workflowCtx.ResultsLock.Lock()
@@ -443,12 +475,28 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 	wp.logger.Infof("Task %s execution context cancelled", task.ID)
 }
 
-func (wp *WorkerPool) markTaskFailed(task models.Task, err error) {
+func (wp *WorkerPool) markTaskFailed(task models.Task, err error, workflowCtx *WorkflowContext) {
 	wp.mu.RLock()
 	state, ok := wp.executions[task.ExecutionID]
 	wp.mu.RUnlock()
 	if !ok {
 		wp.logger.Errorf("Cannot mark task %s as failed: execution %s not found", task.ID, task.ExecutionID)
+		// Even if execution is not found, we should still update the task status and store the error result
+		// Check if this is a task (not a flow) to update status
+		wp.mu.RLock()
+		isTask := wp.taskTypes[task.ID] == "task"
+		wp.mu.RUnlock()
+
+		if isTask {
+			if updateErr := wp.taskService.UpdateTaskStatus(task.ID, task.WorkflowID, models.FailedTaskStatus, err.Error()); updateErr != nil {
+				wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
+			}
+		}
+
+		// Store error result so dependent tasks can access it
+		workflowCtx.ResultsLock.Lock()
+		workflowCtx.Results[task.ID] = TaskResult(fmt.Sprintf("ERROR: %v", err))
+		workflowCtx.ResultsLock.Unlock()
 		return
 	}
 
@@ -466,6 +514,11 @@ func (wp *WorkerPool) markTaskFailed(task models.Task, err error) {
 			wp.logger.Errorf("Failed to update task %s status to FAILED: %v", task.ID, updateErr)
 		}
 	}
+
+	// Store error result so dependent tasks can access it
+	workflowCtx.ResultsLock.Lock()
+	workflowCtx.Results[task.ID] = TaskResult(fmt.Sprintf("ERROR: %v", err))
+	workflowCtx.ResultsLock.Unlock()
 
 	state.mu.Lock()
 	state.pendingCount--
