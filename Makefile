@@ -45,6 +45,10 @@ vet: ## 👨‍⚕️ Vet code
 test: ## 🧪 Run all tests
 	go tool godotenv -f .env go test -race -count=1 -shuffle=on -coverprofile=coverage.out ./...
 
+.PHONY: test-repeat
+test-repeat: ## 🔄 Run tests 10 times to check for flaky tests
+	./scripts/test-repeat.sh
+
 .PHONY: build
 build: ## 👷 Build
 	cd cmd/goflow && go build -o goflow main.go && mv goflow ../../
