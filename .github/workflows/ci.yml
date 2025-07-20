@@ -2,9 +2,9 @@ name: GoFlow CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build:
@@ -17,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24' 
+          go-version: "1.24"
 
       - name: Install dependencies
         run: make deps
@@ -36,7 +36,7 @@ jobs:
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_NAME: ${{ secrets.DB_NAME }}
-        run: make test
+        run: go test -race -count=1 -shuffle=on ./...
 
       - name: Build
         run: make build
@@ -48,14 +48,14 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
-  
+
   migrate_dev:
     if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
 
     env:
-      DB_URL_DEV: ${{ secrets.DB_URL_DEV }}  # Full DB URL for dev environment
+      DB_URL_DEV: ${{ secrets.DB_URL_DEV }} # Full DB URL for dev environment
 
     steps:
       - name: Checkout code
