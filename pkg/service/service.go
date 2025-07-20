@@ -211,16 +211,10 @@ func (s *WorkflowService) ExecuteFlow(ctx context.Context, workflowID int64, flo
 	workflowCtx := WorkflowContext{
 		WorkflowID:  workflowID,
 		Results:     s.results[workflowID],
-		ResultsLock: &sync.RWMutex{},
+		ResultsLock: &s.mu, // Use the service's mutex to protect the shared results map
 	}
-	results, errs := s.wp.ExecuteTasks(ctx, execID, workflowCtx, order)
+	_, errs := s.wp.ExecuteTasks(ctx, execID, workflowCtx, order)
 
-	// store results
-	s.mu.Lock()
-	for taskID, result := range results {
-		s.results[workflowID][taskID] = result
-	}
-	s.mu.Unlock()
 
 	if len(errs) > 0 {
 		if errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus); errU != nil {
