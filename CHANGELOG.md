@@ -1,3 +1,9 @@
+## [0.2.2] - 2025-07-21
+
+### Bug Fixes
+- fix release script
+
+
 ## [0.2.1] - 2025-07-21
 
 ### Bug Fixes
