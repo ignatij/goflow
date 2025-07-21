@@ -62,7 +62,7 @@ jobs:
         id: version
         run: |
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # Extract version from tag
+            # Extract version from tag (strip 'v' prefix)
             VERSION=${GITHUB_REF#refs/tags/v}
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "next-version=$VERSION" >> $GITHUB_OUTPUT
@@ -71,7 +71,6 @@ jobs:
             chmod +x scripts/version.sh
             CURRENT_VERSION=$(./scripts/version.sh version | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+')
             NEXT_VERSION=$(./scripts/version.sh next | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | tail -1)
-            
             echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
             echo "next-version=$NEXT_VERSION" >> $GITHUB_OUTPUT
           fi
@@ -119,20 +118,17 @@ jobs:
         id: prepare
         run: |
           chmod +x scripts/version.sh
-          
           if [[ $GITHUB_REF == refs/tags/* ]]; then
-            # Manual release from tag
+            # Manual release from tag (strip 'v' prefix)
             VERSION=${GITHUB_REF#refs/tags/v}
             echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
             # Automated release
             VERSION=${{ needs.determine-release.outputs.next-version }}
             echo "version=$VERSION" >> $GITHUB_OUTPUT
-            
-            # Update version files
+            # Update version files (no 'v' prefix)
             ./scripts/version.sh bump
-            
-            # Create and push tag
+            # Create and push tag (add 'v' prefix)
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
             git add VERSION CHANGELOG.md go.mod

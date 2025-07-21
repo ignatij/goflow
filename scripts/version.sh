@@ -122,7 +122,8 @@ update_go_mod_version() {
     
     # Update go.mod if it contains a version directive
     if grep -q "^// Version:" go.mod; then
-        sed -i.bak "s/^\/\/ Version:.*/\/\/ Version: $clean_version/" go.mod
+        # Use a different delimiter to avoid issues with forward slashes
+        sed -i.bak "s|^// Version:.*|// Version: $clean_version|" go.mod
         rm -f go.mod.bak
     else
         # Add version directive if it doesn't exist
@@ -246,6 +247,10 @@ show_version() {
 show_next_version() {
     local current_version=$(get_current_version)
     local next_version=$(get_next_version "$current_version")
+    
+    # Debug output
+    echo "DEBUG: current_version='$current_version'" >&2
+    echo "DEBUG: next_version='$next_version'" >&2
     
     if [ "$current_version" = "$next_version" ]; then
         print_info "No version bump needed. Current version: $current_version"
