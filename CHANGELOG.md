@@ -1,3 +1,9 @@
+## [0.2.3] - 2025-07-21
+
+### Bug Fixes
+- use go max procs as number for the buffered channel size (#16)
+
+
 ## [0.2.2] - 2025-07-21
 
 ### Bug Fixes
