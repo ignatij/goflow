@@ -161,7 +161,9 @@ generate_changelog() {
     if [ -n "$last_tag" ]; then
         commits=$(git log --pretty=format:"%s" "$last_tag"..HEAD)
     else
-        commits=$(git log --pretty=format:"%s")
+        # If no tags exist, this is the first release
+        # Only include commits that are conventional commits (exclude initial commits)
+        commits=$(git log --pretty=format:"%s" | grep -E "^(feat|fix|docs|style|refactor|perf|test|chore)(\(.+\))?:" || true)
     fi
     
     local features=""
