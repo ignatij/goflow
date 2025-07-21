@@ -151,6 +151,8 @@ func (wp *WorkerPool) handleContextCancellation(execID string, taskIDs []string,
 		state.taskErrors[execID] = err
 		state.mu.Unlock()
 	}
+
+	// Clean up the execution - this will cause any remaining tasks in the queue to be skipped
 	wp.cleanupExecution(execID)
 }
 
@@ -259,6 +261,19 @@ func (wp *WorkerPool) worker() {
 		if wp.ctx.Err() != nil {
 			return
 		}
+
+		// Check if the execution still exists before processing the task
+		wp.mu.RLock()
+		_, executionExists := wp.executions[taskCtx.Task.ExecutionID]
+		wp.mu.RUnlock()
+
+		if !executionExists {
+			// Execution has been cleaned up, mark task as failed and skip processing
+			wp.logger.Infof("Skipping task %s: execution %s has been cleaned up", taskCtx.Task.ID, taskCtx.Task.ExecutionID)
+			wp.markTaskFailed(*taskCtx.Task, fmt.Errorf("execution %s has been cleaned up", taskCtx.Task.ExecutionID), taskCtx.WorkflowCtx)
+			continue
+		}
+
 		wp.executeTask(taskCtx)
 	}
 }
@@ -317,9 +332,9 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		res, ok := workflowCtx.Results[dependency]
 		workflowCtx.ResultsLock.RUnlock()
 		if !ok {
-			err := fmt.Errorf("result for dependency %s not found", dependency)
-			wp.logger.Errorf("Error retrieving dependency result: %v", err)
-			wp.markTaskFailed(task, err, &workflowCtx)
+			// Dependency result not found, requeue the task and try again later
+			wp.logger.Infof("Dependency %s result not found for task %s, requeuing", dependency, task.ID)
+			wp.taskChan <- taskCtx
 			return
 		}
 		args[i] = res

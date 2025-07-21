@@ -215,7 +215,6 @@ func (s *WorkflowService) ExecuteFlow(ctx context.Context, workflowID int64, flo
 	}
 	_, errs := s.wp.ExecuteTasks(ctx, execID, workflowCtx, order)
 
-
 	if len(errs) > 0 {
 		if errU := txStore.UpdateWorkflowStatus(workflowID, models.FailedWorkflowStatus); errU != nil {
 			return nil, errors.Wrap(errU, "failed to update workflow status after errors")
