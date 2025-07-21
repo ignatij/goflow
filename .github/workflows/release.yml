@@ -118,6 +118,7 @@ jobs:
         id: prepare
         run: |
           chmod +x scripts/version.sh
+          chmod +x scripts/update-readme-version.sh
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             # Manual release from tag (strip 'v' prefix)
             VERSION=${GITHUB_REF#refs/tags/v}
@@ -128,10 +129,12 @@ jobs:
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             # Update version files (no 'v' prefix)
             ./scripts/version.sh bump
+            # Update README.md with new version
+            ./scripts/update-readme-version.sh "$VERSION"
             # Create and push tag (add 'v' prefix)
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
-            git add VERSION CHANGELOG.md go.mod
+            git add VERSION CHANGELOG.md go.mod README.md
             git commit -m "chore: release version $VERSION"
             git tag -a "v$VERSION" -m "Release v$VERSION"
             git push origin main

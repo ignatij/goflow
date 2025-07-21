@@ -284,6 +284,12 @@ bump_version() {
     update_go_mod_version "$next_version"
     generate_changelog "$next_version"
     
+    # Update README.md with new version
+    if [ -f "scripts/update-readme-version.sh" ]; then
+        chmod +x scripts/update-readme-version.sh
+        ./scripts/update-readme-version.sh "$next_version"
+    fi
+    
     print_success "Version bumped to $next_version"
 }
 
