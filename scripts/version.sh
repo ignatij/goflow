@@ -38,7 +38,9 @@ print_error() {
 # Function to get current version
 get_current_version() {
     if [ -f "$VERSION_FILE" ]; then
-        cat "$VERSION_FILE"
+        # Read version and clean it (remove any extra whitespace/newlines)
+        local version=$(cat "$VERSION_FILE" | tr -d '\r\n' | xargs)
+        echo "$version"
     else
         echo "0.1.0"
     fi
@@ -47,14 +49,18 @@ get_current_version() {
 # Function to get the next version based on commit types
 get_next_version() {
     local current_version=$1
+    
+    # Clean the version string (remove any whitespace/newlines)
+    current_version=$(echo "$current_version" | tr -d '\r\n' | xargs)
+    
     local major=$(echo "$current_version" | cut -d. -f1)
     local minor=$(echo "$current_version" | cut -d. -f2)
     local patch=$(echo "$current_version" | cut -d. -f3)
     
     # Get commits since last tag
     local last_tag
-    if git describe --tags --abbrev=0 2>/dev/null; then
-        last_tag=$(git describe --tags --abbrev=0)
+    if git describe --tags --abbrev=0 2>/dev/null >/dev/null; then
+        last_tag=$(git describe --tags --abbrev=0 2>/dev/null)
     else
         # If no tags exist, get all commits
         last_tag=""
@@ -95,16 +101,21 @@ get_next_version() {
         fi
     done <<< "$commits"
     
-    # Determine version bump
+    # Determine version bump and ensure only one line is output
+    local next_version
+    
     if [ "$has_breaking" = true ]; then
-        echo "$((major + 1)).0.0"
+        next_version="$((major + 1)).0.0"
     elif [ "$has_feature" = true ]; then
-        echo "$major.$((minor + 1)).0"
+        next_version="$major.$((minor + 1)).0"
     elif [ "$has_fix" = true ] || [ "$has_chore" = true ]; then
-        echo "$major.$minor.$((patch + 1))"
+        next_version="$major.$minor.$((patch + 1))"
     else
-        echo "$current_version"
+        next_version="$current_version"
     fi
+    
+    # Output only the version, no extra lines
+    printf "%s" "$next_version"
 }
 
 # Function to update version file
@@ -136,8 +147,8 @@ update_go_mod_version() {
 generate_changelog() {
     local version=$1
     local last_tag
-    if git describe --tags --abbrev=0 2>/dev/null; then
-        last_tag=$(git describe --tags --abbrev=0)
+    if git describe --tags --abbrev=0 2>/dev/null >/dev/null; then
+        last_tag=$(git describe --tags --abbrev=0 2>/dev/null)
     else
         last_tag=""
     fi
@@ -246,12 +257,8 @@ show_version() {
 # Function to show next version
 show_next_version() {
     local current_version=$(get_current_version)
-    local next_version=$(get_next_version "$current_version")
-    
-    # Debug output
-    echo "DEBUG: current_version='$current_version'" >&2
-    echo "DEBUG: next_version='$next_version'" >&2
-    
+    local next_version
+    next_version=$(get_next_version "$current_version")
     if [ "$current_version" = "$next_version" ]; then
         print_info "No version bump needed. Current version: $current_version"
     else
@@ -263,7 +270,8 @@ show_next_version() {
 # Function to bump version
 bump_version() {
     local current_version=$(get_current_version)
-    local next_version=$(get_next_version "$current_version")
+    local next_version
+    next_version=$(get_next_version "$current_version")
     
     if [ "$current_version" = "$next_version" ]; then
         print_warning "No version bump needed. Current version: $current_version"
@@ -282,7 +290,8 @@ bump_version() {
 # Function to release
 release() {
     local current_version=$(get_current_version)
-    local next_version=$(get_next_version "$current_version")
+    local next_version
+    next_version=$(get_next_version "$current_version")
     
     if [ "$current_version" = "$next_version" ]; then
         print_warning "No version bump needed. Current version: $current_version"
@@ -304,7 +313,8 @@ show_help() {
     echo ""
     echo "Commands:"
     echo "  version     Show current version"
-    echo "  next        Show next version based on commits"
+    echo "  next        Show next version based on commits (human readable)"
+    echo "  next-raw    Show next version based on commits (raw output for scripts)"
     echo "  bump        Bump version based on commits"
     echo "  release     Bump version, create tag, and push"
     echo "  help        Show this help message"
@@ -312,6 +322,7 @@ show_help() {
     echo "Examples:"
     echo "  $0 version"
     echo "  $0 next"
+    echo "  $0 next-raw"
     echo "  $0 bump"
     echo "  $0 release"
 }
@@ -323,6 +334,9 @@ case "${1:-help}" in
         ;;
     "next")
         show_next_version
+        ;;
+    "next-raw")
+        get_next_version "$(get_current_version)"
         ;;
     "bump")
         bump_version
