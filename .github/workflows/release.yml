@@ -159,12 +159,12 @@ jobs:
           fi
 
       - name: Create Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: v${{ steps.prepare.outputs.version }}
-          release_name: Release v${{ steps.prepare.outputs.version }}
+          name: Release v${{ steps.prepare.outputs.version }}
           body: |
             ${{ steps.changelog.outputs.changelog }}
             
@@ -179,16 +179,8 @@ jobs:
             ${{ steps.changelog.outputs.changelog }}
           draft: false
           prerelease: false
-
-      - name: Upload Release Assets
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create-release.outputs.upload_url }}
-          asset_path: ./goflow
-          asset_name: goflow-${{ steps.prepare.outputs.version }}-linux-amd64
-          asset_content_type: application/octet-stream
+          files: ./goflow
+          fail_on_unmatched_files: false
 
   # Job to publish to Go module proxy
   publish-module:
