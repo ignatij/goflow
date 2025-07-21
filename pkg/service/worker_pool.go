@@ -68,7 +68,6 @@ func NewWorkerPool(
 		store:       store,
 		taskService: taskService,
 		logger:      logger,
-		taskChan:    make(chan TaskContext, 100),
 		executions:  make(map[string]*executionState),
 		ctx:         mainCtx,
 	}
@@ -79,6 +78,7 @@ func (wp *WorkerPool) Start(workers int) {
 	if workers <= 0 {
 		workers = runtime.NumCPU()
 	}
+	wp.taskChan = make(chan TaskContext, workers)
 	for i := 0; i < workers; i++ {
 		wp.wg.Add(1)
 		go wp.worker()
