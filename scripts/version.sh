@@ -138,14 +138,19 @@ generate_changelog() {
     if git describe --tags --abbrev=0 2>/dev/null; then
         last_tag=$(git describe --tags --abbrev=0)
     else
-        last_tag="v0.0.0"
+        last_tag=""
     fi
     
     # Create changelog entry
     local changelog_entry="## [${version#v}] - $(date +%Y-%m-%d)\n\n"
     
     # Get commits since last tag
-    local commits=$(git log --pretty=format:"%s" "$last_tag"..HEAD)
+    local commits
+    if [ -n "$last_tag" ]; then
+        commits=$(git log --pretty=format:"%s" "$last_tag"..HEAD)
+    else
+        commits=$(git log --pretty=format:"%s")
+    fi
     
     local features=""
     local fixes=""

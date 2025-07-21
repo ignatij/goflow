@@ -81,6 +81,9 @@ jobs:
     needs: determine-release
     if: needs.determine-release.outputs.should-release == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -196,6 +199,8 @@ jobs:
     needs: create-release
     if: needs.determine-release.outputs.should-release == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
