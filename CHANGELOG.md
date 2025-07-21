@@ -1,3 +1,10 @@
+## [0.2.1] - 2025-07-21
+
+### Bug Fixes
+- fix release script
+- test release workflow with version prefix handling
+
+
 ## [0.2.0] - 2025-07-21
 
 ### Features
