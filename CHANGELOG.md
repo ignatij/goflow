@@ -1,3 +1,9 @@
+## [0.2.4] - 2025-07-21
+
+### Bug Fixes
+- fix generation of changelog (#17)
+
+
 ## [0.2.3] - 2025-07-21
 
 ### Bug Fixes
