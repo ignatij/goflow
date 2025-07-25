@@ -230,6 +230,27 @@ The project includes comprehensive examples demonstrating various features:
 - **[Retry Mechanisms](examples/retry_always_fail/)**: Retry policies and failure handling
 - **[Timeout Retries](examples/retry_with_timeout/)**: Timeout with retry configuration
 
+### 🛒 Real-World Example: E-commerce Order Processing
+
+For a comprehensive real-world example showcasing advanced GoFlow features, check out the **[GoFlow E-commerce Example](https://github.com/ignatij/goflow-example/)** repository. This example demonstrates:
+
+- **Complex Task Dependencies**: Multi-step e-commerce order processing workflow
+- **Error Handling & Retries**: Inventory checking with automatic retry mechanisms
+- **Timeout Management**: Payment processing with configurable timeouts
+- **Parallel Execution**: Independent tasks running concurrently
+- **Data Flow**: Proper passing of order data between tasks
+- **Real-world Scenarios**: Order validation, inventory management, payment processing, shipping, and email notifications
+
+The e-commerce example includes a complete workflow with tasks like:
+- Order validation
+- Inventory checking (with retry mechanism)
+- Payment processing (with timeout)
+- Shipping preparation
+- Email confirmation
+- Inventory updates
+
+This is an excellent resource for understanding how to build production-ready workflows with GoFlow.
+
 ## 🏗️ Architecture
 
 ### Core Components
