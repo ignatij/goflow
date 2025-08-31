@@ -1,3 +1,12 @@
+## [0.2.5] - 2025-08-31
+
+### Documentation
+- add goflow-example in the readme.md
+
+### Maintenance
+- use go 1.25
+
+
 ## [0.2.4] - 2025-07-21
 
 ### Bug Fixes
