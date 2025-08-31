@@ -80,8 +80,7 @@ func (wp *WorkerPool) Start(workers int) {
 	}
 	wp.taskChan = make(chan TaskContext, workers)
 	for i := 0; i < workers; i++ {
-		wp.wg.Add(1)
-		go wp.worker()
+		wp.wg.Go(wp.worker)
 	}
 }
 
@@ -256,7 +255,6 @@ func (wp *WorkerPool) ExecuteTasks(ctx context.Context, execID string, workflowC
 }
 
 func (wp *WorkerPool) worker() {
-	defer wp.wg.Done()
 	for taskCtx := range wp.taskChan {
 		if wp.ctx.Err() != nil {
 			return
@@ -300,7 +298,6 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 	}
 	if !canRun {
 		wp.taskChan <- taskCtx
-		// wp.logger.Infof("Requeued task %s due to unready dependencies", taskCtx.Task.ID)
 		return
 	}
 
