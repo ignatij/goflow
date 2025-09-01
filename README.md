@@ -121,7 +121,7 @@ func main() {
             return nil, fmt.Errorf("API temporarily unavailable")
         }
         return "api_response", nil
-    }, nil, 
+    }, nil,
         models.WithRetries(3),           // Retry up to 3 times
         models.WithTimeout(30*time.Second), // 30 second timeout
     )
@@ -162,7 +162,7 @@ import (
 func main() {
     ctx := context.Background()
     logger := log.GetLogger()
-    
+
     // Connect to PostgreSQL
     dbURL := "postgres://username:password@localhost:5432/goflow?sslmode=disable"
     store, err := storage.NewPostgresStore(dbURL)
@@ -242,6 +242,7 @@ For a comprehensive real-world example showcasing advanced GoFlow features, chec
 - **Real-world Scenarios**: Order validation, inventory management, payment processing, shipping, and email notifications
 
 The e-commerce example includes a complete workflow with tasks like:
+
 - Order validation
 - Inventory checking (with retry mechanism)
 - Payment processing (with timeout)
@@ -301,6 +302,8 @@ DB_NAME=goflow
 
 ### Setup Development Environment
 
+- [golangci-lint](https://golangci-lint.run/docs/welcome/install/#local-installation)
+
 ```bash
 # Install dependencies
 make deps
@@ -337,6 +340,7 @@ make version-release
 ```
 
 **Commit Types:**
+
 - `feat:` - New features (minor version bump)
 - `fix:` - Bug fixes (patch version bump)
 - `chore:` - Maintenance tasks (patch version bump)
@@ -351,21 +355,21 @@ For detailed information about the versioning system, see [VERSIONING.md](docs/V
 make help  # Show all available targets
 ```
 
-| Target | Description |
-|--------|-------------|
-| `deps` | Install Go dependencies |
-| `build` | Build the binary |
-| `test` | Run all tests |
-| `lint` | Run linter |
-| `fmt` | Format code |
-| `vet` | Run go vet |
-| `init_db` | Start and migrate local database |
-| `start` | Start the application |
-| `build_docker` | Build Docker image |
-| `version` | Show current version |
-| `version-next` | Show next version based on commits |
-| `version-bump` | Bump version based on commits |
-| `version-release` | Release version (bump, tag, push) |
+| Target            | Description                        |
+| ----------------- | ---------------------------------- |
+| `deps`            | Install Go dependencies            |
+| `build`           | Build the binary                   |
+| `test`            | Run all tests                      |
+| `lint`            | Run linter                         |
+| `fmt`             | Format code                        |
+| `vet`             | Run go vet                         |
+| `init_db`         | Start and migrate local database   |
+| `start`           | Start the application              |
+| `build_docker`    | Build Docker image                 |
+| `version`         | Show current version               |
+| `version-next`    | Show next version based on commits |
+| `version-bump`    | Bump version based on commits      |
+| `version-release` | Release version (bump, tag, push)  |
 
 ## 📡 API Reference
 

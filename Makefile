@@ -35,7 +35,7 @@ fmt: ## 🎨 Format code
 
 .PHONY: lint
 lint: ## 🧹 Lint code
-	go tool golangci-lint run
+	golangci-lint run
 
 .PHONY: vet
 vet: ## 👨‍⚕️ Vet code

@@ -20,20 +20,32 @@ func main() {
 	wfService := service.NewWorkflowService(ctx, store, logger)
 
 	// Register tasks
-	wfService.RegisterTask("hello", service.WrapTaskFunc(func(args ...service.TaskResult) (service.TaskResult, error) {
+	err := wfService.RegisterTask("hello", service.WrapTaskFunc(func(args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Println("Hello, world!")
 		return "hello done", nil
 	}), nil)
+	if err != nil {
+		logger.Errorf("Failed to register hello task: %v", err)
+		os.Exit(1)
+	}
 
-	wfService.RegisterTask("goodbye", service.WrapTaskFunc(func(args ...service.TaskResult) (service.TaskResult, error) {
+	err = wfService.RegisterTask("goodbye", service.WrapTaskFunc(func(args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Println("Goodbye, world!")
 		return "goodbye done", nil
 	}), []string{"hello"}) // Depends on 'hello'
+	if err != nil {
+		logger.Errorf("Failed to register goodbye task: %v", err)
+		os.Exit(1)
+	}
 
 	// Register a flow (entry point)
-	wfService.RegisterFlow("main", service.WrapTaskFunc(func(args ...service.TaskResult) (service.TaskResult, error) {
+	err = wfService.RegisterFlow("main", service.WrapTaskFunc(func(args ...service.TaskResult) (service.TaskResult, error) {
 		return "workflow complete", nil
 	}), []string{"goodbye"})
+	if err != nil {
+		logger.Errorf("Failed to register main flow: %v", err)
+		os.Exit(1)
+	}
 
 	// Create a workflow instance
 	workflowID, err := wfService.CreateWorkflow("basic-example")
