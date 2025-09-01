@@ -1,4 +1,4 @@
-// Version: 0.2.5
+// Version: 0.2.6
 module github.com/ignatij/goflow
 
 go 1.25.0

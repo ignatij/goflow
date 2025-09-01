@@ -1,3 +1,9 @@
+## [0.2.6] - 2025-09-01
+
+### Maintenance
+- update rest of files to use go1.25
+
+
 ## [0.2.5] - 2025-08-31
 
 ### Documentation

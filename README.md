@@ -28,13 +28,13 @@ A lightweight, high-performance workflow management library built in Go. GoFlow 
 Add GoFlow to your Go module:
 
 ```bash
-go get github.com/ignatij/goflow@v0.2.5
+go get github.com/ignatij/goflow@v0.2.6
 ```
 
 Or add it to your `go.mod`:
 
 ```go
-require github.com/ignatij/goflow v0.2.5
+require github.com/ignatij/goflow v0.2.6
 ```
 
 #### Basic Usage
