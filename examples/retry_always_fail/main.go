@@ -19,15 +19,23 @@ func main() {
 
 	wfService := service.NewWorkflowService(ctx, store, logger)
 
-	wfService.RegisterTask("always_fail", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+	err := wfService.RegisterTask("always_fail", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Println("Task attempt: always failing!")
 		return nil, fmt.Errorf("simulated permanent failure")
 	}, nil, models.WithRetries(3))
+	if err != nil {
+		logger.Errorf("Failed to register always_fail task: %v", err)
+		os.Exit(1)
+	}
 
-	wfService.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+	err = wfService.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Println("This should not be printed if task always fails.")
 		return "should not complete", nil
 	}, []string{"always_fail"})
+	if err != nil {
+		logger.Errorf("Failed to register flow: %v", err)
+		os.Exit(1)
+	}
 
 	workflowID, err := wfService.CreateWorkflow("retry-always-fail-example")
 	if err != nil {

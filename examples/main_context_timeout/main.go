@@ -20,7 +20,7 @@ func main() {
 	defer cancel()
 	wfService := service.NewWorkflowService(timeoutCtx, store, logger)
 
-	wfService.RegisterTask("slow", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+	err := wfService.RegisterTask("slow", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Println("Starting slow task...")
 		select {
 		case <-time.After(3 * time.Second):
@@ -31,11 +31,19 @@ func main() {
 			return nil, ctx.Err()
 		}
 	}, nil)
+	if err != nil {
+		logger.Errorf("Failed to register task: %v", err)
+		os.Exit(1)
+	}
 
-	wfService.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+	err = wfService.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Println("Flow finished (should not reach here if timeout)")
 		return "flow complete", nil
 	}, []string{"slow"})
+	if err != nil {
+		logger.Errorf("Failed to register flow: %v", err)
+		os.Exit(1)
+	}
 
 	workflowID, err := wfService.CreateWorkflow("context-timeout-example")
 	if err != nil {

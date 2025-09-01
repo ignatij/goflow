@@ -19,7 +19,7 @@ func main() {
 
 	wfService := service.NewWorkflowService(ctx, store, logger)
 
-	wfService.RegisterTask("timeout_task", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+	err := wfService.RegisterTask("timeout_task", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Println("Task attempt: will timeout!")
 		select {
 		case <-time.After(2 * time.Second):
@@ -29,11 +29,19 @@ func main() {
 			return nil, ctx.Err()
 		}
 	}, nil, models.WithRetries(2), models.WithTimeout(1*time.Second))
+	if err != nil {
+		logger.Errorf("Failed to register timeout_task: %v", err)
+		os.Exit(1)
+	}
 
-	wfService.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+	err = wfService.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Println("This should not be printed if task always times out.")
 		return "should not complete", nil
 	}, []string{"timeout_task"})
+	if err != nil {
+		logger.Errorf("Failed to register flow: %v", err)
+		os.Exit(1)
+	}
 
 	workflowID, err := wfService.CreateWorkflow("retry-with-timeout-example")
 	if err != nil {

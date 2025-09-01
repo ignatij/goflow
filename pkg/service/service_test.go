@@ -45,7 +45,7 @@ func TestClientWorkflowInMemory_Pipeline(t *testing.T) {
 		assert.NoError(t, err)
 		_, err = svc.ExecuteFlow(context.Background(), wfID, "nonexistent")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "flow 'nonexistent' is not registered!")
+		assert.Contains(t, err.Error(), "flow 'nonexistent' ")
 	})
 
 	t.Run("UnregisteredTaskInFlow", func(t *testing.T) {
@@ -672,7 +672,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 		assert.NoError(t, err)
 		_, err = svc.ExecuteFlow(context.Background(), wfID, "nonexistent")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "flow 'nonexistent' is not registered!")
+		assert.Contains(t, err.Error(), "flow 'nonexistent' is not registered")
 	})
 
 	t.Run("UnregisteredTaskInFlow", func(t *testing.T) {

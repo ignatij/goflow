@@ -21,7 +21,7 @@ func main() {
 	wfService := service.NewWorkflowService(ctx, store, logger)
 
 	var failCount int32
-	wfService.RegisterTask("unstable", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+	err := wfService.RegisterTask("unstable", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 		if atomic.AddInt32(&failCount, 1) == 1 {
 			fmt.Println("Unstable task: failing on first attempt")
 			return nil, fmt.Errorf("simulated failure")
@@ -29,11 +29,19 @@ func main() {
 		fmt.Println("Unstable task: succeeded on retry")
 		return "success after retry", nil
 	}, nil, models.WithRetries(2))
+	if err != nil {
+		logger.Errorf("Failed to register unstable task: %v", err)
+		os.Exit(1)
+	}
 
-	wfService.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+	err = wfService.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
 		fmt.Printf("Flow got: %v\n", args)
 		return "error handling complete", nil
 	}, []string{"unstable"})
+	if err != nil {
+		logger.Errorf("Failed to register flow: %v", err)
+		os.Exit(1)
+	}
 
 	workflowID, err := wfService.CreateWorkflow("error-handling-example")
 	if err != nil {

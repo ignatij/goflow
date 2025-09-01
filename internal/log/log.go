@@ -12,11 +12,12 @@ func init() {
 	logger = logrus.New()
 	level := os.Getenv("LOG_LEVEL")
 	if level != "" {
-		if level == "DEBUG" {
+		switch level {
+		case "DEBUG":
 			logger.SetLevel(logrus.DebugLevel)
-		} else if level == "WARN" {
+		case "WARN":
 			logger.SetLevel(logrus.WarnLevel)
-		} else if level == "INFO" {
+		case "INFO":
 			logger.SetLevel(logrus.InfoLevel)
 		}
 	} else {

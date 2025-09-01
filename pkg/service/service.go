@@ -180,7 +180,7 @@ func (s *WorkflowService) ExecuteFlow(ctx context.Context, workflowID int64, flo
 	s.mu.RLock()
 	if _, ok := s.flows[flowName]; !ok {
 		s.mu.RUnlock()
-		return nil, fmt.Errorf("flow '%s' is not registered!", flowName)
+		return nil, fmt.Errorf("flow '%s' is not registered", flowName)
 	}
 	s.mu.RUnlock()
 

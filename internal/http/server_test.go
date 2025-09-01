@@ -290,7 +290,7 @@ func TestE2EServer(t *testing.T) {
 		body, err = io.ReadAll(resp.Body)
 		assert.NoError(t, err)
 		// this should trigger 500 as the pipeline flow is not registered
-		assert.Equal(t, "{\"error\":\"Failed to execute flow: flow 'pipeline' is not registered!\"}\n", string(body))
+		assert.Equal(t, "{\"error\":\"Failed to execute flow: flow 'pipeline' is not registered\"}\n", string(body))
 		assert.Equal(t, 500, resp.StatusCode)
 
 		var flowResp struct {
