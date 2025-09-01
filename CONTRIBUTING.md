@@ -16,7 +16,7 @@ We welcome contributions from the community! Here are the main ways you can cont
 
 ### Prerequisites
 
-- **Go**: Version 1.24 or higher
+- **Go**: Version 1.25 or higher
 - **Git**: For version control
 - **PostgreSQL**: For integration tests (optional - Docker can be used)
 - **Docker**: For running PostgreSQL in containers (optional)
