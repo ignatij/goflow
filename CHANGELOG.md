@@ -1,3 +1,12 @@
+## [0.2.7] - 2025-09-01
+
+### Bug Fixes
+- lint issues
+
+### Maintenance
+- use golangci-lint as binary for go1.25
+
+
 ## [0.2.6] - 2025-09-01
 
 ### Maintenance
