@@ -418,11 +418,6 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		timeout = &defaultTimeout
 	}
 
-	resultCh := make(chan struct {
-		res TaskResult
-		err error
-	}, 1)
-
 	// Create a context that is cancelled when either the task context or worker pool context is cancelled
 	execCtx, cancel := context.WithCancel(ctx)
 	// Monitor both contexts
@@ -457,16 +452,21 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 
 	for attempt := 0; attempt <= task.Retries; attempt++ {
 		wp.logger.Infof("Starting task %s attempt %d", task.ID, attempt+1)
+		updateTaskAttempts(attempt + 1)
 
-		// Create a timeout context for this attempt
+		// Create a per-attempt timeout context and result channel.
+		// timeoutCancel is called by this goroutine after select so it cannot race
+		// with reading the task's result from attemptResultCh.
 		timeoutCtx, timeoutCancel := context.WithTimeout(execCtx, *timeout)
+		attemptResultCh := make(chan struct {
+			res TaskResult
+			err error
+		}, 1)
 
 		// Execute the task in a goroutine
 		go func() {
-			defer timeoutCancel()
-			updateTaskAttempts(attempt + 1)
 			res, err := taskFn(timeoutCtx, args...)
-			resultCh <- struct {
+			attemptResultCh <- struct {
 				res TaskResult
 				err error
 			}{res, err}
@@ -474,7 +474,8 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 
 		// Wait for either the result or context cancellation
 		select {
-		case r := <-resultCh:
+		case r := <-attemptResultCh:
+			timeoutCancel()
 			result, taskErr = r.res, r.err
 			wp.logger.Infof("Task %s received result: %v, error: %v", task.ID, result, taskErr)
 			if taskErr == nil {
@@ -491,6 +492,7 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 				continue
 			}
 		case <-timeoutCtx.Done():
+			timeoutCancel()
 			taskErr = timeoutCtx.Err()
 			wp.logger.Infof("Task %s timeout reached: %v", task.ID, taskErr)
 			updateTaskStatus(models.FailedTaskStatus, taskErr.Error())
