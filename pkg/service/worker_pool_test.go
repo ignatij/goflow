@@ -351,3 +351,109 @@ func TestWorkerPool_DependentTasks(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerPool_ExponentialBackoff(t *testing.T) {
+	store := NewTestInMemoryStore()
+	logger := newLogger(t)
+	ctx := context.Background()
+	svc := service.NewWorkflowService(ctx, store, logger)
+
+	var attemptTimes []time.Time
+	err := svc.RegisterTask(
+		"flaky",
+		func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+			attemptTimes = append(attemptTimes, time.Now())
+			if len(attemptTimes) < 4 {
+				return nil, fmt.Errorf("transient failure %d", len(attemptTimes))
+			}
+			return "ok", nil
+		},
+		nil,
+		models.WithRetries(3),
+		models.WithRetryBackoff(40*time.Millisecond, 200*time.Millisecond),
+	)
+	if err != nil {
+		t.Fatalf("RegisterTask failed: %v", err)
+	}
+	if err := svc.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+		return args[0], nil
+	}, []string{"flaky"}); err != nil {
+		t.Fatalf("RegisterFlow failed: %v", err)
+	}
+
+	wfID, err := svc.CreateWorkflow("backoff-test")
+	if err != nil {
+		t.Fatalf("CreateWorkflow failed: %v", err)
+	}
+
+	res, err := svc.ExecuteFlow(ctx, wfID, "main")
+	if err != nil {
+		t.Fatalf("ExecuteFlow failed: %v", err)
+	}
+	if res != "ok" {
+		t.Fatalf("expected 'ok', got %v", res)
+	}
+	if len(attemptTimes) != 4 {
+		t.Fatalf("expected 4 attempts, got %d", len(attemptTimes))
+	}
+
+	// Equal jitter guarantees:
+	// gap0 in [20ms, 40ms], gap1 in [40ms, 80ms], gap2 in [80ms, 160ms]
+	// Total delay >= 140ms, and gap2 >= gap0 (80ms vs <=40ms).
+	gap0 := attemptTimes[1].Sub(attemptTimes[0])
+	gap2 := attemptTimes[3].Sub(attemptTimes[2])
+	total := attemptTimes[3].Sub(attemptTimes[0])
+	if total < 130*time.Millisecond {
+		t.Errorf("expected total backoff >= 130ms, got %v (gap0=%v, gap2=%v)", total, gap0, gap2)
+	}
+	if gap2 <= gap0 {
+		t.Errorf("expected exponential growth (gap2 > gap0), got gap0=%v gap2=%v", gap0, gap2)
+	}
+}
+
+func TestWorkerPool_CancelDuringBackoff(t *testing.T) {
+	store := NewTestInMemoryStore()
+	logger := newLogger(t)
+	svc := service.NewWorkflowService(context.Background(), store, logger)
+
+	attempts := 0
+	if err := svc.RegisterTask(
+		"slow-backoff",
+		func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+			attempts++
+			return nil, fmt.Errorf("always fails")
+		},
+		nil,
+		models.WithRetries(5),
+		models.WithRetryBackoff(5*time.Second, 30*time.Second),
+	); err != nil {
+		t.Fatalf("RegisterTask failed: %v", err)
+	}
+	if err := svc.RegisterFlow("main", func(ctx context.Context, args ...service.TaskResult) (service.TaskResult, error) {
+		return args[0], nil
+	}, []string{"slow-backoff"}); err != nil {
+		t.Fatalf("RegisterFlow failed: %v", err)
+	}
+
+	wfID, err := svc.CreateWorkflow("cancel-backoff")
+	if err != nil {
+		t.Fatalf("CreateWorkflow failed: %v", err)
+	}
+
+	execCtx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err = svc.ExecuteFlow(execCtx, wfID, "main")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error when context cancels during backoff")
+	}
+	if elapsed > 1*time.Second {
+		t.Fatalf("ExecuteFlow did not abort promptly during backoff sleep: took %v", elapsed)
+	}
+	if attempts != 1 {
+		t.Errorf("expected only 1 attempt before cancel during 5s backoff, got %d", attempts)
+	}
+}

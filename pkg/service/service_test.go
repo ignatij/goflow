@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	internal_storage "github.com/ignatij/goflow/internal/storage"
 	"github.com/ignatij/goflow/internal/testutil"
 	"github.com/ignatij/goflow/pkg/models"
 	"github.com/ignatij/goflow/pkg/service"
 	"github.com/ignatij/goflow/pkg/storage"
+	"github.com/ignatij/goflow/pkg/storage/postgres"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
@@ -656,7 +656,7 @@ func TestClientWorkflowPostgres_Pipelines(t *testing.T) {
 	defer testDB.Teardown(t)
 
 	postgresStore := func(t *testing.T) storage.Store {
-		store, err := internal_storage.InitStore(testDB.ConnStr)
+		store, err := postgres.NewStore(testDB.ConnStr)
 		assert.NoError(t, err)
 		t.Cleanup(func() {
 			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")

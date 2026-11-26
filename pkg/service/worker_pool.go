@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"runtime"
 	"sync"
 	"time"
@@ -12,9 +13,59 @@ import (
 )
 
 const (
-	// default task timeout is 1m
+	// DefaultTaskTimeout is the default per-attempt task timeout (1 minute).
 	DefaultTaskTimeout = 60 * time.Second
+	// DefaultRetryBaseDelay is the initial backoff delay before the first retry.
+	DefaultRetryBaseDelay = 100 * time.Millisecond
+	// DefaultRetryMaxDelay caps exponential retry backoff growth.
+	DefaultRetryMaxDelay = 30 * time.Second
 )
+
+// computeBackoff returns an exponential backoff delay with equal jitter in [d/2, d],
+// where d = min(base * 2^attempt, maxDelay).
+func computeBackoff(attempt int, base, maxDelay time.Duration, randFloat func() float64) time.Duration {
+	if base <= 0 {
+		base = DefaultRetryBaseDelay
+	}
+	if maxDelay <= 0 {
+		maxDelay = DefaultRetryMaxDelay
+	}
+	if maxDelay < base {
+		maxDelay = base
+	}
+	if attempt < 0 {
+		attempt = 0
+	}
+
+	delay := base
+	for i := 0; i < attempt; i++ {
+		if delay >= maxDelay/2 {
+			delay = maxDelay
+			break
+		}
+		delay *= 2
+	}
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+
+	half := delay / 2
+	if half == 0 {
+		return delay
+	}
+	return half + time.Duration(randFloat()*float64(half))
+}
+
+func waitBackoff(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 // executionState holds state for a single execution (workflow + flow)
 type executionState struct {
@@ -312,15 +363,22 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 		return
 	}
 
-	// get task function
+	// get task function and retry backoff config
 	wp.mu.RLock()
 	taskFn, ok := wp.tasks[task.ID]
+	taskCfg := wp.taskConfigs[task.ID]
 	wp.mu.RUnlock()
 	if !ok {
 		err := fmt.Errorf("task function %s not found", task.ID)
 		wp.logger.Errorf("Error retrieving task function: %v", err)
 		wp.markTaskFailed(task, err, &workflowCtx)
 		return
+	}
+
+	var retryBase, retryMax time.Duration
+	if taskCfg != nil {
+		retryBase = taskCfg.RetryBaseDelay
+		retryMax = taskCfg.RetryMaxDelay
 	}
 
 	args := make([]TaskResult, len(task.Dependencies))
@@ -423,18 +481,26 @@ func (wp *WorkerPool) executeTask(taskCtx TaskContext) {
 				break
 			}
 			task.ErrorMsg = taskErr.Error()
-			if attempt < task.Retries {
-				wp.logger.Infof("Retrying task %s (attempt %d/%d): %v", task.ID, attempt+1, task.Retries, taskErr)
-				<-time.After(100 * time.Millisecond)
+			if attempt < task.Retries && execCtx.Err() == nil {
+				delay := computeBackoff(attempt, retryBase, retryMax, rand.Float64)
+				wp.logger.Infof("Retrying task %s in %v (attempt %d/%d): %v", task.ID, delay, attempt+1, task.Retries, taskErr)
+				if waitErr := waitBackoff(execCtx, delay); waitErr != nil {
+					taskErr = waitErr
+					break
+				}
 				continue
 			}
 		case <-timeoutCtx.Done():
 			taskErr = timeoutCtx.Err()
 			wp.logger.Infof("Task %s timeout reached: %v", task.ID, taskErr)
 			updateTaskStatus(models.FailedTaskStatus, taskErr.Error())
-			if attempt < task.Retries {
-				wp.logger.Infof("Retrying task %s due to timeout (attempt %d/%d)", task.ID, attempt+1, task.Retries)
-				<-time.After(100 * time.Millisecond)
+			if attempt < task.Retries && execCtx.Err() == nil {
+				delay := computeBackoff(attempt, retryBase, retryMax, rand.Float64)
+				wp.logger.Infof("Retrying task %s due to timeout in %v (attempt %d/%d)", task.ID, delay, attempt+1, task.Retries)
+				if waitErr := waitBackoff(execCtx, delay); waitErr != nil {
+					taskErr = waitErr
+					break
+				}
 				continue
 			}
 		}

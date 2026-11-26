@@ -1,13 +1,13 @@
-package storage_test
+package postgres_test
 
 import (
 	"testing"
 	"time"
 
-	internal_storage "github.com/ignatij/goflow/internal/storage"
 	"github.com/ignatij/goflow/internal/testutil"
 	"github.com/ignatij/goflow/pkg/models"
 	"github.com/ignatij/goflow/pkg/storage"
+	"github.com/ignatij/goflow/pkg/storage/postgres"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,13 +16,13 @@ func TestPostgresStore(t *testing.T) {
 	defer testDB.Teardown(t)
 
 	// Helper to create a transactional store
-	newTxStore := func(t *testing.T) *internal_storage.PostgresStore {
-		store, err := internal_storage.NewPostgresStore(testDB.ConnStr)
+	newTxStore := func(t *testing.T) *postgres.Store {
+		store, err := postgres.NewStore(testDB.ConnStr)
 		assert.NoError(t, err)
 		txStore, err := store.Begin()
 		assert.NoError(t, err)
 		t.Cleanup(func() { txStore.Rollback() })
-		return txStore.(*internal_storage.PostgresStore)
+		return txStore.(*postgres.Store)
 	}
 
 	// Test GetWorkflow

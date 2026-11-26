@@ -7,7 +7,7 @@ import (
 	"github.com/ignatij/goflow/internal/cli"
 	"github.com/ignatij/goflow/internal/http"
 	"github.com/ignatij/goflow/internal/log"
-	"github.com/ignatij/goflow/internal/storage"
+	"github.com/ignatij/goflow/pkg/storage/postgres"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +19,7 @@ func main() {
 		Short: "GoFlow: A workflow management server",
 		Long:  "GoFlow manages workflows via HTTP API, with optional CLI commands.",
 		Run: func(cmd *cobra.Command, args []string) {
-			log.GetLogger().Infof("Running server with db: %s, port: %s", dbConnStr, port)
+			log.GetLogger().Infof("Starting GoFlow server on port %s", port)
 			store := initStore(dbConnStr)
 			defer store.Close()
 			if err := http.StartServer(port, store); err != nil {
@@ -45,8 +45,8 @@ func main() {
 	}
 }
 
-func initStore(dbConnStr string) *storage.PostgresStore {
-	store, err := storage.InitStore(dbConnStr)
+func initStore(dbConnStr string) *postgres.Store {
+	store, err := postgres.NewStore(dbConnStr)
 	if err != nil {
 		log.GetLogger().Errorf("Failed to initialize store: %v", err)
 		os.Exit(1)

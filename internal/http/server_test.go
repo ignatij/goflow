@@ -13,11 +13,11 @@ import (
 
 	internal_http "github.com/ignatij/goflow/internal/http"
 	"github.com/ignatij/goflow/internal/log"
-	internal_storage "github.com/ignatij/goflow/internal/storage"
 	"github.com/ignatij/goflow/internal/testutil"
 	"github.com/ignatij/goflow/pkg/models"
 	"github.com/ignatij/goflow/pkg/service"
 	"github.com/ignatij/goflow/pkg/storage"
+	"github.com/ignatij/goflow/pkg/storage/postgres"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -54,7 +54,7 @@ func TestE2EServer(t *testing.T) {
 	}
 
 	newTestStore := func(t *testing.T) storage.Store {
-		store, err := internal_storage.InitStore(testDB.ConnStr)
+		store, err := postgres.NewStore(testDB.ConnStr)
 		assert.NoError(t, err)
 		t.Cleanup(func() {
 			_, err := testDB.DB.Exec("TRUNCATE TABLE workflows RESTART IDENTITY CASCADE")

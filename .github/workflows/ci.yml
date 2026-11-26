@@ -17,57 +17,32 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: "1.26"
 
-      - name: Install dependencies
-        run: make deps
+      - name: Download dependencies
+        run: go mod download
 
-      - name: Golangci-lint
-        uses: golangci/golangci-lint-action@v8.0.0
-
-      - name: Format code
-        run: make fmt
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l cmd internal pkg)
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: Vet code
-        run: make vet
+        run: go vet ./...
 
       - name: Lint code
-        run: make lint
+        uses: golangci/golangci-lint-action@v8.0.0
 
       - name: Run tests
         env:
-          DB_USERNAME: ${{ secrets.DB_USERNAME }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USERNAME: testuser
+          DB_PASSWORD: testpass
+          DB_NAME: goflow_test
         run: go test -race -count=1 -shuffle=on ./...
 
       - name: Build
         run: make build
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.out
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-
-  migrate_dev:
-    if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-
-    env:
-      DB_URL_DEV: ${{ secrets.DB_URL_DEV }} # Full DB URL for dev environment
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install migrate CLI
-        run: |
-          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.18.2/migrate.linux-amd64.tar.gz | tar xvz
-          sudo mv migrate /usr/local/bin
-
-      - name: Run migrations on dev database
-        run: migrate -path migrations -database "$DB_URL_DEV" up

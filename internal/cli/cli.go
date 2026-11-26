@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/ignatij/goflow/internal/log"
-	internal_storage "github.com/ignatij/goflow/internal/storage"
 	"github.com/ignatij/goflow/pkg/service"
+	"github.com/ignatij/goflow/pkg/storage/postgres"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +25,6 @@ func SetupCLI(rootCmd *cobra.Command) {
 				log.GetLogger().Errorf("Error retrieving db flag: %v", err)
 				os.Exit(1)
 			}
-			log.GetLogger().Debugf("Running create with db: %s", dbConnStr)
 			store := initStore(dbConnStr)
 			defer store.Close()
 			svc := service.NewWorkflowService(context.Background(), store, log.GetLogger())
@@ -48,7 +47,6 @@ func SetupCLI(rootCmd *cobra.Command) {
 				log.GetLogger().Errorf("Error retrieving db flag: %v", err)
 				os.Exit(1)
 			}
-			log.GetLogger().Debugf("Running list with db: %s", dbConnStr)
 			store := initStore(dbConnStr)
 			defer store.Close()
 			svc := service.NewWorkflowService(context.Background(), store, log.GetLogger())
@@ -130,8 +128,8 @@ func listWorkflows(svc *service.WorkflowService) {
 	}
 }
 
-func initStore(dbConnStr string) *internal_storage.PostgresStore {
-	store, err := internal_storage.InitStore(dbConnStr)
+func initStore(dbConnStr string) *postgres.Store {
+	store, err := postgres.NewStore(dbConnStr)
 	if err != nil {
 		log.GetLogger().Errorf("Failed to initialize store: %v", err)
 		os.Exit(1)

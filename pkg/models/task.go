@@ -28,8 +28,10 @@ type Task struct {
 }
 
 type TaskConfig struct {
-	Retries int
-	Timeout *time.Duration
+	Retries        int
+	Timeout        *time.Duration
+	RetryBaseDelay time.Duration
+	RetryMaxDelay  time.Duration
 }
 
 type TaskOption func(*TaskConfig)
@@ -43,5 +45,13 @@ func WithRetries(retries int) TaskOption {
 func WithTimeout(timeout time.Duration) TaskOption {
 	return func(tc *TaskConfig) {
 		tc.Timeout = &timeout
+	}
+}
+
+// WithRetryBackoff configures the initial and maximum delay for exponential retry backoff.
+func WithRetryBackoff(base, maxDelay time.Duration) TaskOption {
+	return func(tc *TaskConfig) {
+		tc.RetryBaseDelay = base
+		tc.RetryMaxDelay = maxDelay
 	}
 }

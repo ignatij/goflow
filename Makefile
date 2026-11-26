@@ -35,7 +35,11 @@ fmt: ## 🎨 Format code
 
 .PHONY: lint
 lint: ## 🧹 Lint code
-	golangci-lint run
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run; \
+	else \
+		go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run; \
+	fi
 
 .PHONY: vet
 vet: ## 👨‍⚕️ Vet code

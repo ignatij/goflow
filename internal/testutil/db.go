@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -18,33 +20,57 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// TestDB holds the test database connection and container
+// TestDB holds the test database connection and container.
 type TestDB struct {
 	DB        *sqlx.DB
 	Container testcontainers.Container
 	ConnStr   string
 }
 
-// SetupTestDB initializes a PostgreSQL container and returns a connected DB
+func envOrDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func migrationsURL() (string, error) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("failed to resolve caller path for migrations")
+	}
+	migrationsDir := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "migrations"))
+	return "file://" + filepath.ToSlash(migrationsDir), nil
+}
+
+func startPostgresContainer(ctx context.Context, req testcontainers.ContainerRequest) (pgContainer testcontainers.Container, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("testcontainers panic: %v", r)
+		}
+	}()
+	return testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+}
+
+// SetupTestDB initializes a PostgreSQL container and returns a connected DB.
+// In -short mode, or locally when Docker is unavailable, the test is skipped.
 func SetupTestDB(t *testing.T) *TestDB {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping PostgreSQL integration test in -short mode")
+	}
+
 	ctx := context.Background()
 
-	// Load .env file
-	if err := godotenv.Load(); err != nil {
-		t.Logf("No .env file found or failed to load: %v. Proceeding with environment variables.", err)
-	}
+	// Load .env file if present (optional; defaults are used for ephemeral testcontainers).
+	_ = godotenv.Load()
 
-	required := []string{"DB_USERNAME", "DB_PASSWORD", "DB_NAME"}
-	for _, key := range required {
-		if os.Getenv(key) == "" {
-			t.Fatalf("Error: required env var %s not set", key)
-		}
-	}
-
-	// Get environment variables
-	dbUsername := os.Getenv("DB_USERNAME")
-	dbPassword := os.Getenv("DB_PASSWORD")
-	dbName := os.Getenv("DB_NAME")
+	dbUsername := envOrDefault("DB_USERNAME", "testuser")
+	dbPassword := envOrDefault("DB_PASSWORD", "testpass")
+	dbName := envOrDefault("DB_NAME", "goflow_test")
 
 	// Define the container request
 	req := testcontainers.ContainerRequest{
@@ -59,11 +85,11 @@ func SetupTestDB(t *testing.T) *TestDB {
 	}
 
 	// Start the container
-	pgContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
+	pgContainer, err := startPostgresContainer(ctx, req)
 	if err != nil {
+		if os.Getenv("CI") == "" {
+			t.Skipf("skipping PostgreSQL integration test (Docker unavailable): %v", err)
+		}
 		t.Fatalf("Failed to start PostgreSQL container: %v", err)
 	}
 
@@ -106,7 +132,12 @@ func SetupTestDB(t *testing.T) *TestDB {
 	}
 
 	// Run migrations
-	m, err := migrate.New("file://../../migrations", connStr)
+	migURL, err := migrationsURL()
+	if err != nil {
+		_ = pgContainer.Terminate(ctx)
+		t.Fatalf("Failed to locate migrations directory: %v", err)
+	}
+	m, err := migrate.New(migURL, connStr)
 	if err != nil {
 		errTerminateCnt := pgContainer.Terminate(ctx)
 		if errTerminateCnt != nil {

@@ -1,4 +1,5 @@
-package storage
+// Package postgres provides a PostgreSQL-backed implementation of storage.Store.
+package postgres
 
 import (
 	"database/sql"
@@ -8,10 +9,12 @@ import (
 	"github.com/ignatij/goflow/pkg/storage"
 	"github.com/jmoiron/sqlx"
 
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
-// DBInterface defines the database operations
+var _ storage.Store = (*Store)(nil)
+
+// DBInterface defines the database operations shared by *sqlx.DB and *sqlx.Tx.
 type DBInterface interface {
 	Get(dest interface{}, query string, args ...interface{}) error
 	Select(dest interface{}, query string, args ...interface{}) error
@@ -19,61 +22,62 @@ type DBInterface interface {
 	Exec(query string, args ...interface{}) (sql.Result, error)
 }
 
-// PostgresStore implements the Store interface for PostgreSQL
-type PostgresStore struct {
+// Store implements storage.Store backed by PostgreSQL.
+type Store struct {
 	db DBInterface
 }
 
-// NewPostgresStore initializes a new PostgresStore
-func NewPostgresStore(connStr string) (*PostgresStore, error) {
+// NewStore opens and verifies a PostgreSQL connection and returns a Store.
+func NewStore(connStr string) (*Store, error) {
 	db, err := sqlx.Open("postgres", connStr)
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
-	return &PostgresStore{db: db}, nil
+	return &Store{db: db}, nil
 }
 
-// Begin starts a transaction
-func (s *PostgresStore) Begin() (storage.Store, error) {
+// Begin starts a transaction.
+func (s *Store) Begin() (storage.Store, error) {
 	if db, ok := s.db.(*sqlx.DB); ok {
 		tx, err := db.Beginx()
 		if err != nil {
 			return nil, err
 		}
-		return &PostgresStore{db: tx}, nil
+		return &Store{db: tx}, nil
 	}
 	return nil, fmt.Errorf("cannot begin transaction on unknown type")
 }
 
-// Commit commits a transaction
-func (s *PostgresStore) Commit() error {
+// Commit commits a transaction.
+func (s *Store) Commit() error {
 	if tx, ok := s.db.(*sqlx.Tx); ok {
 		return tx.Commit()
 	}
 	return fmt.Errorf("cannot commit: not a transaction")
 }
 
-// Rollback rolls back a transaction
-func (s *PostgresStore) Rollback() error {
+// Rollback rolls back a transaction.
+func (s *Store) Rollback() error {
 	if tx, ok := s.db.(*sqlx.Tx); ok {
 		return tx.Rollback()
 	}
 	return fmt.Errorf("cannot rollback: not a transaction")
 }
 
-// Close closes the database connection
-func (s *PostgresStore) Close() error {
+// Close closes the database connection.
+func (s *Store) Close() error {
 	if db, ok := s.db.(*sqlx.DB); ok {
 		return db.Close()
 	}
 	return nil // No-op for *sqlx.Tx
 }
 
-// SaveWorkflow saves a workflow and returns its ID
-func (s *PostgresStore) SaveWorkflow(w models.Workflow) (int64, error) {
+// SaveWorkflow saves a workflow and returns its ID.
+func (s *Store) SaveWorkflow(w models.Workflow) (int64, error) {
 	var wfID int64
 	err := s.db.QueryRowx("INSERT INTO workflows (name, status, created_at, updated_at) VALUES ($1, $2, $3, $4) RETURNING id",
 		w.Name, w.Status, w.CreatedAt, w.UpdatedAt).Scan(&wfID)
@@ -83,8 +87,8 @@ func (s *PostgresStore) SaveWorkflow(w models.Workflow) (int64, error) {
 	return wfID, nil
 }
 
-// GetWorkflow retrieves a workflow by ID
-func (s *PostgresStore) GetWorkflow(id int64) (models.Workflow, error) {
+// GetWorkflow retrieves a workflow by ID.
+func (s *Store) GetWorkflow(id int64) (models.Workflow, error) {
 	var wf models.Workflow
 	err := s.db.Get(&wf, "SELECT * FROM workflows WHERE id = $1", id)
 	if err == sql.ErrNoRows {
@@ -132,14 +136,13 @@ func (s *PostgresStore) GetWorkflow(id int64) (models.Workflow, error) {
 		} else {
 			wf.Tasks[i].Dependencies = []string{}
 		}
-		// Leave Dependencies as nil if no dependencies exist
 	}
 
 	return wf, nil
 }
 
-// ListWorkflows lists all workflows
-func (s *PostgresStore) ListWorkflows() ([]models.Workflow, error) {
+// ListWorkflows lists all workflows.
+func (s *Store) ListWorkflows() ([]models.Workflow, error) {
 	workflows := []models.Workflow{}
 	query := "SELECT id, name, status, created_at, updated_at FROM workflows ORDER BY created_at DESC"
 	err := s.db.Select(&workflows, query)
@@ -149,15 +152,14 @@ func (s *PostgresStore) ListWorkflows() ([]models.Workflow, error) {
 	return workflows, nil
 }
 
-// UpdateWorkflowStatus updates a workflow's status
-func (s *PostgresStore) UpdateWorkflowStatus(id int64, status models.WorkflowStatus) error {
+// UpdateWorkflowStatus updates a workflow's status.
+func (s *Store) UpdateWorkflowStatus(id int64, status models.WorkflowStatus) error {
 	_, err := s.db.Exec("UPDATE workflows SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2", status, id)
 	return err
 }
 
-// SaveTask saves a task
-func (s *PostgresStore) SaveTask(t models.Task) error {
-	// Save task without dependencies
+// SaveTask saves a task and its dependencies.
+func (s *Store) SaveTask(t models.Task) error {
 	_, err := s.db.Exec(`
 		INSERT INTO tasks (
 			id, workflow_id, name, status, retries, attempts, error_msg, 
@@ -206,8 +208,8 @@ func (s *PostgresStore) SaveTask(t models.Task) error {
 	return nil
 }
 
-// GetTask retrieves a task by ID and workflow ID
-func (s *PostgresStore) GetTask(id string, workflowID int64) (models.Task, error) {
+// GetTask retrieves a task by ID and workflow ID.
+func (s *Store) GetTask(id string, workflowID int64) (models.Task, error) {
 	var task models.Task
 	err := s.db.Get(&task, `
 		SELECT 
@@ -237,8 +239,8 @@ func (s *PostgresStore) GetTask(id string, workflowID int64) (models.Task, error
 	return task, nil
 }
 
-// UpdateTaskStatus updates a task's status and error message
-func (s *PostgresStore) UpdateTaskStatus(id string, workflowID int64, status models.TaskStatus, errorMsg string) error {
+// UpdateTaskStatus updates a task's status and error message.
+func (s *Store) UpdateTaskStatus(id string, workflowID int64, status models.TaskStatus, errorMsg string) error {
 	_, err := s.db.Exec(`
 		UPDATE tasks 
 		SET status = $1, 
@@ -249,8 +251,8 @@ func (s *PostgresStore) UpdateTaskStatus(id string, workflowID int64, status mod
 	return err
 }
 
-// UpdatesTaskAttempts updates a task's number of attempts
-func (s *PostgresStore) UpdateTaskAttempts(id string, workflowID int64, attempts int) error {
+// UpdateTaskAttempts updates a task's number of attempts.
+func (s *Store) UpdateTaskAttempts(id string, workflowID int64, attempts int) error {
 	_, err := s.db.Exec(`
 		UPDATE tasks 
 		SET attempts = $1
