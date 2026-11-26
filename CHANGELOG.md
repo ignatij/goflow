@@ -1,3 +1,9 @@
+## [0.3.0] - 2026-11-26
+
+### Features
+- add exponential retry backoff, expose pkg/storage/postgres, and harden CI/docs
+
+
 ## [0.2.7] - 2025-09-01
 
 ### Bug Fixes

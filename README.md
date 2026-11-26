@@ -23,7 +23,7 @@ GoFlow is intentionally scoped as an embedded Go workflow library rather than a 
 ### Installation
 
 ```bash
-go get github.com/ignatij/goflow@v0.2.7
+go get github.com/ignatij/goflow@v0.3.0
 ```
 
 ### Basic DAG Execution
